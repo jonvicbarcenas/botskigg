@@ -99,6 +99,9 @@ class BotClient {
 
     this.bot = mineflayer.createBot(botOptions);
     
+    // Attach config to bot for plugin access
+    this.bot.config = this.config;
+    
     // Setup auto-reconnect
     this.setupAutoReconnect();
     

@@ -71,8 +71,11 @@ class PluginLoader {
         throw new Error(`Plugin ${pluginInfo.name} does not export a default class`);
       }
 
-      // Instantiate plugin
-      const plugin = new PluginClass(this.bot);
+      // Get plugin-specific config from bot's config
+      const pluginConfig = this.getPluginConfig(pluginInfo.name);
+
+      // Instantiate plugin with config
+      const plugin = new PluginClass(this.bot, pluginConfig);
       
       // Check if plugin implements required methods
       if (typeof plugin.load !== 'function') {
@@ -100,11 +103,42 @@ class PluginLoader {
   }
 
   /**
+   * Get plugin-specific configuration
+   */
+  getPluginConfig(pluginName) {
+    // Convert plugin name to config key (e.g., WebViewer -> webViewer)
+    const configKey = pluginName.charAt(0).toLowerCase() + pluginName.slice(1);
+    
+    // Check if bot has config
+    if (!this.bot.config) return {};
+    
+    // Return plugin-specific config or empty object
+    return this.bot.config[configKey] || {};
+  }
+
+  /**
    * Load all discovered plugins
    */
   async loadAll(filter = null) {
     const discovered = await this.discoverPlugins();
     const toLoad = filter ? discovered.filter(filter) : discovered;
+
+    // Define plugin loading priority order
+    const priorityOrder = {
+      'core': 1,        // Core plugins first (StateMachine, etc.)
+      'navigation': 2,  // Navigation second (provides pathfinder)
+      'combat': 3,
+      'automatics': 4,
+      'economy': 5,     // Economy plugins last (depend on navigation)
+      'external': 6
+    };
+
+    // Sort plugins by category priority
+    toLoad.sort((a, b) => {
+      const priorityA = priorityOrder[a.category] || 999;
+      const priorityB = priorityOrder[b.category] || 999;
+      return priorityA - priorityB;
+    });
 
     logger.info(`Loading ${toLoad.length} plugins...`);
 
