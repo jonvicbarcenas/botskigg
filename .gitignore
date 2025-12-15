@@ -112,3 +112,4 @@ dist
 # OS
 .DS_Store
 Thumbs.db
+data/inventory_log.json
