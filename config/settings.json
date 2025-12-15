@@ -22,7 +22,7 @@
   "features": {
     "stateMachine": true,
     "pathfinder": true,
-    "webViewer": false,
+    "webViewer": true,
     "webInventory": false,
     "autoEat": true,
     "autoCombat": false,

@@ -24,12 +24,25 @@ class AutoFarm extends IPlugin {
     this.harvestCount = 0;
     this.plantCount = 0;
     this.stateMachine = null;
+    this.pluginLoader = null;
+    this.pathfinder = null;
   }
 
   async load() {
     try {
       // Get StateMachine reference
       this.stateMachine = this.bot.stateMachine;
+      
+      // Get pluginLoader reference from BotClient
+      const BotClient = (await import('../../core/BotClient.js')).default;
+      const botClient = BotClient.getInstance();
+      this.pluginLoader = botClient.getPluginLoader();
+      
+      // Get pathfinder from Navigation plugin
+      const navigation = this.pluginLoader.getPlugin('Navigation');
+      if (navigation && navigation.pathfinder) {
+        this.pathfinder = navigation.pathfinder;
+      }
       
       // Setup farming behaviors if state machine is available
       if (this.stateMachine) {
@@ -210,7 +223,11 @@ class AutoFarm extends IPlugin {
       // Move to crop
       const distance = this.bot.entity.position.distanceTo(block.position);
       if (distance > 4) {
-        await this.bot.pathfinder.goto(block.position.x, block.position.y, block.position.z, 3);
+        if (this.pathfinder) {
+          await this.pathfinder.goto(block.position.x, block.position.y, block.position.z, 3);
+        } else {
+          logger.warn('Pathfinder not available, skipping movement');
+        }
       }
 
       // Look at crop
