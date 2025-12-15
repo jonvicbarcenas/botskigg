@@ -65,6 +65,15 @@ class SugarcaneFarm extends IPlugin {
       
       this.isLoaded = true;
       logger.success('SugarcaneFarm plugin loaded');
+      
+      // Auto-start farming if enabled in config
+      if (this.config.autoStart !== false) {
+        // Wait a bit for bot to fully initialize
+        setTimeout(async () => {
+          await this.startFarming();
+          logger.info('Auto-started sugarcane farming');
+        }, 3000);
+      }
     } catch (error) {
       logger.error('Failed to load SugarcaneFarm plugin', error);
       throw error;
