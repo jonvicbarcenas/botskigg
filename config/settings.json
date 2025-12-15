@@ -1,0 +1,36 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 25565,
+    "version": "1.20.1",
+    "auth": "offline"
+  },
+  "bot": {
+    "username": "AdvancedBot",
+    "password": "",
+    "hideErrors": false,
+    "viewDistance": "tiny",
+    "chatLengthLimit": 100
+  },
+  "behavior": {
+    "autoRespawn": true,
+    "autoReconnect": true,
+    "reconnectDelay": 5000,
+    "chatCommandPrefix": "!",
+    "lookAtPlayerWhenTalking": true
+  },
+  "features": {
+    "stateMachine": true,
+    "pathfinder": true,
+    "webViewer": false,
+    "webInventory": false,
+    "autoEat": true,
+    "autoCombat": false,
+    "autoFarm": false
+  },
+  "webViewer": {
+    "port": 3000,
+    "host": "0.0.0.0",
+    "firstPerson": true
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "waypoints": {
+    "home": {
+      "x": 26,
+      "y": 63,
+      "z": -53,
+      "description": "Added by command"
+    }
+  },
+  "routes": {
+    "patrol": [
+      {
+        "x": 0,
+        "y": 64,
+        "z": 0
+      },
+      {
+        "x": 100,
+        "y": 64,
+        "z": 0
+      },
+      {
+        "x": 100,
+        "y": 64,
+        "z": 100
+      },
+      {
+        "x": 0,
+        "y": 64,
+        "z": 100
+      }
+    ]
+  },
+  "areas": {
+    "sugarcane_farm": {
+      "corner1": {
+        "x": 8,
+        "y": 63,
+        "z": -65
+      },
+      "corner2": {
+        "x": -14,
+        "y": 63,
+        "z": -19
+      },
+      "description": "sugarcane farm area"
+    },
+    "sugarcane_chest_area": {
+      "area_radius": {
+        "x": 10,
+        "y": 63,
+        "z": -55,
+        "radius": 10
+      },
+      "description": "area around sugarcane chest"
+    }
+  }
+}

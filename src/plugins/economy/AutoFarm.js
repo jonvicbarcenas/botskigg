@@ -1,0 +1,317 @@
+import IPlugin from '../../interfaces/IPlugin.js';
+import logger from '../../utils/Logger.js';
+import mineflayerStateMachine from 'mineflayer-statemachine';
+
+const { BehaviorIdle, StateTransition } = mineflayerStateMachine;
+
+/**
+ * AutoFarm Plugin - Handles automated farming
+ */
+class AutoFarm extends IPlugin {
+  constructor(bot, config = {}) {
+    super('AutoFarm', bot, config);
+    this.isFarming = false;
+    this.farmArea = null;
+    this.cropTypes = ['wheat', 'carrots', 'potatoes', 'beetroots', 'nether_wart'];
+    this.matureCrops = {
+      'wheat': 7,
+      'carrots': 7,
+      'potatoes': 7,
+      'beetroots': 3,
+      'nether_wart': 3
+    };
+    this.farmInterval = null;
+    this.harvestCount = 0;
+    this.plantCount = 0;
+    this.stateMachine = null;
+  }
+
+  async load() {
+    try {
+      // Get StateMachine reference
+      this.stateMachine = this.bot.stateMachine;
+      
+      // Setup farming behaviors if state machine is available
+      if (this.stateMachine) {
+        this.setupBehaviors();
+      }
+      
+      // Register chat commands
+      this.registerEvent('chat', this.handleChat);
+      
+      this.isLoaded = true;
+      logger.success('AutoFarm plugin loaded');
+    } catch (error) {
+      logger.error('Failed to load AutoFarm plugin', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Setup state machine behaviors for farming
+   */
+  setupBehaviors() {
+    // Create farming behavior
+    const farmingBehavior = new BehaviorIdle();
+    farmingBehavior.stateName = 'farming';
+    farmingBehavior.onStateEntered = () => {
+      logger.debug('Entered farming state');
+      this.isFarming = true;
+    };
+    farmingBehavior.onStateExited = () => {
+      logger.debug('Exited farming state');
+      this.isFarming = false;
+    };
+    this.stateMachine.addBehavior('farming', farmingBehavior);
+    
+    // Create transitions
+    this.stateMachine.createTransition({
+      parent: 'idle',
+      child: 'farming',
+      name: 'idle_to_farming',
+      shouldTransition: () => false, // Manual transition
+      onTransition: () => {
+        logger.debug('Transitioning from idle to farming');
+      }
+    });
+    
+    this.stateMachine.createTransition({
+      parent: 'farming',
+      child: 'idle',
+      name: 'farming_to_idle',
+      shouldTransition: () => !this.isFarming,
+      onTransition: () => {
+        logger.debug('Transitioning from farming to idle');
+      }
+    });
+    
+    logger.info('Farming behaviors and transitions registered');
+  }
+
+  async unload() {
+    this.stopFarming();
+    this.unregisterAllEvents();
+    this.isLoaded = false;
+    logger.info('AutoFarm plugin unloaded');
+  }
+
+  async handleChat(username, message) {
+    if (username === this.bot.username) return;
+    
+    if (message === '!farm start') {
+      await this.startFarming();
+      this.bot.chat('Auto-farming started');
+    } else if (message === '!farm stop') {
+      this.stopFarming();
+      this.bot.chat('Auto-farming stopped');
+    } else if (message === '!farm status') {
+      const status = this.getStatus();
+      this.bot.chat(`Farming: ${status.isFarming ? 'Active' : 'Inactive'}, Harvested: ${status.harvestCount}, Planted: ${status.plantCount}`);
+    }
+  }
+
+  async startFarming() {
+    if (this.isFarming) {
+      logger.warn('Already farming');
+      return;
+    }
+
+    this.isFarming = true;
+    this.harvestCount = 0;
+    this.plantCount = 0;
+
+    // Set state to farming
+    if (this.stateMachine) {
+      this.stateMachine.setState('farming');
+    }
+
+    logger.info('Starting auto-farm...');
+    
+    // Start farming loop
+    this.farmInterval = setInterval(async () => {
+      if (this.isFarming) {
+        await this.farmCycle();
+      }
+    }, 5000); // Check every 5 seconds
+  }
+
+  stopFarming() {
+    this.isFarming = false;
+    
+    if (this.farmInterval) {
+      clearInterval(this.farmInterval);
+      this.farmInterval = null;
+    }
+    
+    // Return to idle state
+    if (this.stateMachine) {
+      this.stateMachine.setState('idle');
+    }
+    
+    logger.info('Auto-farming stopped');
+  }
+
+  async farmCycle() {
+    try {
+      // Find mature crops nearby
+      const matureCrops = this.findMatureCrops(16);
+      
+      if (matureCrops.length > 0) {
+        logger.info(`Found ${matureCrops.length} mature crops`);
+        
+        for (const crop of matureCrops.slice(0, 5)) { // Process 5 at a time
+          await this.harvestCrop(crop);
+          await this.replantCrop(crop);
+          await this.sleep(500); // Small delay between actions
+        }
+      }
+    } catch (error) {
+      logger.error('Farm cycle error', error);
+    }
+  }
+
+  findMatureCrops(range = 16) {
+    const crops = [];
+    const pos = this.bot.entity.position;
+
+    // Search for crop blocks in range
+    for (let x = -range; x <= range; x++) {
+      for (let y = -2; y <= 2; y++) {
+        for (let z = -range; z <= range; z++) {
+          const blockPos = pos.offset(x, y, z);
+          const block = this.bot.blockAt(blockPos);
+          
+          if (block && this.isMatureCrop(block)) {
+            crops.push(block);
+          }
+        }
+      }
+    }
+
+    return crops;
+  }
+
+  isMatureCrop(block) {
+    if (!block || !block.name) return false;
+
+    for (const cropType of this.cropTypes) {
+      if (block.name === cropType) {
+        const maxAge = this.matureCrops[cropType];
+        const age = block.metadata || 0;
+        return age >= maxAge;
+      }
+    }
+
+    return false;
+  }
+
+  async harvestCrop(block) {
+    try {
+      // Move to crop
+      const distance = this.bot.entity.position.distanceTo(block.position);
+      if (distance > 4) {
+        await this.bot.pathfinder.goto(block.position.x, block.position.y, block.position.z, 3);
+      }
+
+      // Look at crop
+      await this.bot.lookAt(block.position);
+
+      // Break crop
+      await this.bot.dig(block);
+      
+      this.harvestCount++;
+      logger.debug(`Harvested ${block.name}`);
+    } catch (error) {
+      logger.error(`Failed to harvest crop at ${block.position}`, error);
+    }
+  }
+
+  async replantCrop(block) {
+    try {
+      // Find seeds in inventory
+      const seeds = this.findSeeds(block.name);
+      
+      if (!seeds) {
+        logger.warn(`No seeds for ${block.name}`);
+        return;
+      }
+
+      // Equip seeds
+      await this.bot.equip(seeds, 'hand');
+
+      // Place seeds
+      const blockBelow = this.bot.blockAt(block.position.offset(0, -1, 0));
+      if (blockBelow && blockBelow.name === 'farmland') {
+        await this.bot.placeBlock(blockBelow, new this.bot.vec3(0, 1, 0));
+        this.plantCount++;
+        logger.debug(`Replanted ${block.name}`);
+      }
+    } catch (error) {
+      logger.error(`Failed to replant at ${block.position}`, error);
+    }
+  }
+
+  findSeeds(cropType) {
+    const seedMap = {
+      'wheat': 'wheat_seeds',
+      'carrots': 'carrot',
+      'potatoes': 'potato',
+      'beetroots': 'beetroot_seeds',
+      'nether_wart': 'nether_wart'
+    };
+
+    const seedName = seedMap[cropType];
+    if (!seedName) return null;
+
+    return this.bot.inventory.items().find(item => item.name === seedName);
+  }
+
+  async createFarmland(position, size = 9) {
+    // Simple farmland creator - creates a square farm
+    const halfSize = Math.floor(size / 2);
+    
+    logger.info(`Creating ${size}x${size} farm at position`);
+
+    for (let x = -halfSize; x <= halfSize; x++) {
+      for (let z = -halfSize; z <= halfSize; z++) {
+        try {
+          const blockPos = position.offset(x, 0, z);
+          const block = this.bot.blockAt(blockPos);
+          
+          if (block && (block.name === 'dirt' || block.name === 'grass_block')) {
+            // Use hoe to create farmland
+            const hoe = this.bot.inventory.items().find(item => 
+              item.name.includes('hoe')
+            );
+            
+            if (hoe) {
+              await this.bot.equip(hoe, 'hand');
+              await this.bot.activateBlock(block);
+              await this.sleep(100);
+            }
+          }
+        } catch (error) {
+          logger.error(`Failed to create farmland at offset ${x},${z}`, error);
+        }
+      }
+    }
+
+    logger.success('Farmland creation complete');
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  getStatus() {
+    return {
+      ...super.getStatus(),
+      isFarming: this.isFarming,
+      harvestCount: this.harvestCount,
+      plantCount: this.plantCount,
+      farmArea: this.farmArea
+    };
+  }
+}
+
+export default AutoFarm;

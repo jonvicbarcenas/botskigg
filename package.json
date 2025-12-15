@@ -1,0 +1,35 @@
+{
+  "name": "mineflayer-advanced-mvp",
+  "version": "1.0.0",
+  "description": "Advanced Mineflayer bot with modular plugin architecture",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "minecraft",
+    "mineflayer",
+    "bot",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "mineflayer": "^4.20.1",
+    "mineflayer-pathfinder": "^2.4.4",
+    "mineflayer-statemachine": "^1.1.0",
+    "mineflayer-collectblock": "^1.4.0",
+    "prismarine-viewer": "^1.24.0",
+    "mineflayer-web-inventory": "^1.8.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
