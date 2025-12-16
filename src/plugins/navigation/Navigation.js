@@ -23,8 +23,14 @@ class Navigation extends IPlugin {
     this.currentTarget = null;
     this.isFollowing = false;
     this.followTarget = null;
+    this.isPatrolling = false;
+    this.patrolRoute = [];
+    this.currentPatrolIndex = 0;
     this.stateMachine = null;
     this.behaviors = {};
+    this.movementInterval = null;
+    this.followingInterval = null;
+    this.patrolInterval = null;
   }
 
   async load() {
@@ -76,21 +82,17 @@ class Navigation extends IPlugin {
    * Setup state machine behaviors for navigation
    */
   setupBehaviors() {
-    // Create moving behavior
-    const movingBehavior = new BehaviorIdle();
-    movingBehavior.stateName = 'moving';
-    movingBehavior.onStateEntered = () => {
-      logger.debug('Entered moving state');
-    };
+    // Create dynamic moving behavior
+    const movingBehavior = this.createMovingBehavior();
     this.stateMachine.addBehavior('moving', movingBehavior);
     
-    // Create following behavior
-    const followingBehavior = new BehaviorIdle();
-    followingBehavior.stateName = 'following';
-    followingBehavior.onStateEntered = () => {
-      logger.debug('Entered following state');
-    };
+    // Create dynamic following behavior
+    const followingBehavior = this.createFollowingBehavior();
     this.stateMachine.addBehavior('following', followingBehavior);
+    
+    // Create dynamic patrolling behavior
+    const patrollingBehavior = this.createPatrollingBehavior();
+    this.stateMachine.addBehavior('patrolling', patrollingBehavior);
     
     // Create transitions
     this.stateMachine.createTransition({
@@ -114,6 +116,16 @@ class Navigation extends IPlugin {
     });
     
     this.stateMachine.createTransition({
+      parent: 'idle',
+      child: 'patrolling',
+      name: 'idle_to_patrolling',
+      shouldTransition: () => false, // Manual transition
+      onTransition: () => {
+        logger.debug('Transitioning from idle to patrolling');
+      }
+    });
+    
+    this.stateMachine.createTransition({
       parent: 'moving',
       child: 'idle',
       name: 'moving_to_idle',
@@ -133,11 +145,207 @@ class Navigation extends IPlugin {
       }
     });
     
-    logger.info('Navigation behaviors and transitions registered');
+    this.stateMachine.createTransition({
+      parent: 'patrolling',
+      child: 'idle',
+      name: 'patrolling_to_idle',
+      shouldTransition: () => !this.isPatrolling,
+      onTransition: () => {
+        logger.debug('Transitioning from patrolling to idle');
+      }
+    });
+    
+    logger.info('Dynamic navigation behaviors and transitions registered');
+  }
+
+  /**
+   * Create dynamic moving behavior
+   */
+  createMovingBehavior() {
+    const movingBehavior = new BehaviorIdle();
+    movingBehavior.stateName = 'moving';
+    
+    movingBehavior.onStateEntered = () => {
+      logger.info('Bot started moving to destination');
+      this.startMovementMonitoring();
+    };
+    
+    movingBehavior.onStateExited = () => {
+      logger.debug('Bot stopped moving');
+      this.stopMovementMonitoring();
+    };
+    
+    return movingBehavior;
+  }
+
+  /**
+   * Create dynamic following behavior
+   */
+  createFollowingBehavior() {
+    const followingBehavior = new BehaviorIdle();
+    followingBehavior.stateName = 'following';
+    
+    followingBehavior.onStateEntered = () => {
+      logger.info(`Bot started following ${this.followTarget}`);
+      this.startFollowingMonitoring();
+    };
+    
+    followingBehavior.onStateExited = () => {
+      logger.debug('Bot stopped following');
+      this.stopFollowingMonitoring();
+    };
+    
+    return followingBehavior;
+  }
+
+  /**
+   * Create dynamic patrolling behavior
+   */
+  createPatrollingBehavior() {
+    const patrollingBehavior = new BehaviorIdle();
+    patrollingBehavior.stateName = 'patrolling';
+    
+    patrollingBehavior.onStateEntered = () => {
+      logger.info('Bot started patrolling route');
+      this.startPatrolling();
+    };
+    
+    patrollingBehavior.onStateExited = () => {
+      logger.debug('Bot stopped patrolling');
+      this.stopPatrolling();
+    };
+    
+    return patrollingBehavior;
+  }
+
+  /**
+   * Start movement monitoring
+   */
+  startMovementMonitoring() {
+    this.movementInterval = setInterval(() => {
+      if (!this.pathfinder.isMoving() && this.stateMachine.getState() === 'moving') {
+        logger.success('Movement completed, returning to idle');
+        this.stateMachine.setState('idle');
+      }
+    }, 1000);
+  }
+
+  /**
+   * Stop movement monitoring
+   */
+  stopMovementMonitoring() {
+    if (this.movementInterval) {
+      clearInterval(this.movementInterval);
+      this.movementInterval = null;
+    }
+  }
+
+  /**
+   * Start following monitoring
+   */
+  startFollowingMonitoring() {
+    this.followingInterval = setInterval(() => {
+      if (!this.isFollowing && this.stateMachine.getState() === 'following') {
+        logger.info('Following stopped, returning to idle');
+        this.stateMachine.setState('idle');
+      } else if (this.isFollowing && this.followTarget) {
+        // Continuously update following target
+        const player = this.bot.players[this.followTarget]?.entity;
+        if (!player) {
+          logger.warn(`Lost sight of ${this.followTarget}, stopping follow`);
+          this.stopFollowing();
+          this.stateMachine.setState('idle');
+        }
+      }
+    }, 2000);
+  }
+
+  /**
+   * Stop following monitoring
+   */
+  stopFollowingMonitoring() {
+    if (this.followingInterval) {
+      clearInterval(this.followingInterval);
+      this.followingInterval = null;
+    }
+  }
+
+  /**
+   * Start patrolling
+   */
+  startPatrolling() {
+    this.isPatrolling = true;
+    this.currentPatrolIndex = 0;
+    this.patrolRoute = this.getPatrolRoute();
+    
+    if (this.patrolRoute.length === 0) {
+      logger.warn('No patrol route defined, returning to idle');
+      this.stateMachine.setState('idle');
+      return;
+    }
+    
+    this.performPatrolStep();
+  }
+
+  /**
+   * Stop patrolling
+   */
+  stopPatrolling() {
+    this.isPatrolling = false;
+    if (this.patrolInterval) {
+      clearInterval(this.patrolInterval);
+      this.patrolInterval = null;
+    }
+  }
+
+  /**
+   * Perform one step of patrol
+   */
+  async performPatrolStep() {
+    if (!this.isPatrolling || this.patrolRoute.length === 0) return;
+    
+    const waypoint = this.patrolRoute[this.currentPatrolIndex];
+    logger.info(`Patrolling to waypoint: ${waypoint.name}`);
+    
+    try {
+      await this.gotoCoords(waypoint.x, waypoint.y, waypoint.z, true);
+      
+      // Move to next waypoint
+      this.currentPatrolIndex = (this.currentPatrolIndex + 1) % this.patrolRoute.length;
+      
+      // Wait a bit before next waypoint
+      setTimeout(() => {
+        if (this.isPatrolling) {
+          this.performPatrolStep();
+        }
+      }, 3000);
+      
+    } catch (error) {
+      logger.error('Error during patrol step:', error);
+      this.stopPatrolling();
+      this.stateMachine.setState('idle');
+    }
+  }
+
+  /**
+   * Get patrol route from waypoints
+   */
+  getPatrolRoute() {
+    // Create a simple patrol route from existing waypoints
+    const waypoints = Object.entries(this.waypoints?.waypoints || {});
+    return waypoints.map(([name, pos]) => ({
+      name,
+      x: pos.x,
+      y: pos.y,
+      z: pos.z
+    }));
   }
 
   async unload() {
     this.stopFollowing();
+    this.stopPatrolling();
+    this.stopMovementMonitoring();
+    this.stopFollowingMonitoring();
     this.pathfinder.stop();
     this.unregisterAllEvents();
     this.isLoaded = false;
@@ -202,6 +410,15 @@ class Navigation extends IPlugin {
             this.addWaypoint(args[1]);
           } else if (args[0] === 'list') {
             this.listWaypoints();
+          }
+          break;
+        case 'patrol':
+          if (args[0] === 'start') {
+            this.startPatrolCommand();
+          } else if (args[0] === 'stop') {
+            this.stopPatrolCommand();
+          } else if (args[0] === 'status') {
+            this.getPatrolStatus();
           }
           break;
       }
@@ -312,6 +529,48 @@ class Navigation extends IPlugin {
       return;
     }
     this.bot.chat(`Waypoints: ${names.join(', ')}`);
+  }
+
+  startPatrolCommand() {
+    if (this.isPatrolling) {
+      this.bot.chat('Already patrolling');
+      return;
+    }
+    
+    const waypointCount = Object.keys(this.waypoints?.waypoints || {}).length;
+    if (waypointCount < 2) {
+      this.bot.chat('Need at least 2 waypoints to patrol');
+      return;
+    }
+    
+    if (this.stateMachine) {
+      this.stateMachine.setState('patrolling');
+      this.bot.chat(`Started patrolling ${waypointCount} waypoints`);
+    } else {
+      this.bot.chat('State machine not available');
+    }
+  }
+
+  stopPatrolCommand() {
+    if (!this.isPatrolling) {
+      this.bot.chat('Not currently patrolling');
+      return;
+    }
+    
+    this.stopPatrolling();
+    if (this.stateMachine) {
+      this.stateMachine.setState('idle');
+    }
+    this.bot.chat('Patrol stopped');
+  }
+
+  getPatrolStatus() {
+    if (this.isPatrolling) {
+      const currentWaypoint = this.patrolRoute[this.currentPatrolIndex];
+      this.bot.chat(`Patrolling: ${this.currentPatrolIndex + 1}/${this.patrolRoute.length} - Next: ${currentWaypoint?.name || 'unknown'}`);
+    } else {
+      this.bot.chat('Not patrolling');
+    }
   }
 
   getStatus() {
