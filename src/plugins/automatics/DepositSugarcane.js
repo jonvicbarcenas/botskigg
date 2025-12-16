@@ -262,6 +262,12 @@ class DepositSugarcane extends IPlugin {
       if (dist <= radius + 1) return; // reached area
       attempts++;
 
+      // Temporarily switch to idle to allow navigation
+      const wasDepositing = this.bot.stateMachine?.getStateName() === 'depositing';
+      if (wasDepositing) {
+        this.bot.stateMachine.setState('idle', true);
+      }
+
       // Refresh navigation
       if (!this.navigation) this.navigation = this.pluginLoader.getPlugin('Navigation');
 
@@ -290,6 +296,11 @@ class DepositSugarcane extends IPlugin {
         }
       }
 
+      // Switch back to depositing
+      if (wasDepositing) {
+        this.bot.stateMachine.setState('depositing', true);
+      }
+
       if (attempts > 5) {
         // small random nudge to escape stuck situations
         const pos = this.bot.entity.position;
@@ -309,6 +320,12 @@ class DepositSugarcane extends IPlugin {
   }
 
   async depositToChest(chestBlock) {
+    // Temporarily switch to idle to allow navigation
+    const wasDepositing = this.bot.stateMachine?.getStateName() === 'depositing';
+    if (wasDepositing) {
+      this.bot.stateMachine.setState('idle', true);
+    }
+
     // Move close to chest first
     try {
       if (this.navigation && typeof this.navigation.gotoCoords === 'function') {
@@ -316,6 +333,11 @@ class DepositSugarcane extends IPlugin {
       }
     } catch (e) {
       logger.debug(`Navigation to chest failed: ${e.message}`);
+    }
+
+    // Switch back to depositing
+    if (wasDepositing) {
+      this.bot.stateMachine.setState('depositing', true);
     }
 
     // Open container
