@@ -172,11 +172,11 @@ class DepositSugarcane extends IPlugin {
         }
 
         const countBefore = this.getSugarcaneCount();
-        await this.depositToChest(chestBlock);
+        const depositedAny = await this.depositToChest(chestBlock);
         const countAfter = this.getSugarcaneCount();
         
         // Check if deposit was successful
-        if (countBefore === countAfter && countAfter > 0) {
+        if (!depositedAny || (countBefore === countAfter && countAfter > 0)) {
           // No items were deposited, chest is likely full
           const chestKey = `${chestBlock.position.x},${chestBlock.position.y},${chestBlock.position.z}`;
           this.fullChests.add(chestKey);
@@ -356,15 +356,35 @@ class DepositSugarcane extends IPlugin {
     }
 
     // Deposit all sugarcane (all stacks) robustly
+    let depositedAny = false;
     try {
       const sugarItem = this.mcData.itemsByName['sugar_cane'];
-      if (!sugarItem) return;
+      if (!sugarItem) return depositedAny;
+
+      const countBeforeDeposit = this.getSugarcaneCount();
+      
+      // Check if chest has space by examining container slots
+      const containerSlots = container.slots || container.containerSlots();
+      const emptySlots = containerSlots.filter(slot => slot === null).length;
+      
+      if (emptySlots === 0) {
+        // Check if any existing stacks can accept more items
+        const sugarStacks = containerSlots.filter(slot => slot && slot.type === sugarItem.id);
+        const hasStackSpace = sugarStacks.some(slot => slot.count < slot.stackSize);
+        
+        if (!hasStackSpace) {
+          logger.warn('Chest is completely full, no space for sugarcane');
+          try { await container.close(); } catch {}
+          return depositedAny;
+        }
+      }
 
       // Try fast path: use container.deposit per stack
       const depositAllStacks = async () => {
         // Copy slots list to avoid mutation issues during transfer
         const stacks = this.bot.inventory.items().filter(i => i.type === sugarItem.id);
         for (const stack of stacks) {
+          const countBefore = this.getSugarcaneCount();
           try {
             if (typeof container.deposit === 'function') {
               await container.deposit(stack.type, null, stack.count);
@@ -373,6 +393,16 @@ class DepositSugarcane extends IPlugin {
               await this.safeQuickMove(stack.slot);
             }
             await this.sleep(100);
+            
+            // Check if anything was actually deposited
+            const countAfter = this.getSugarcaneCount();
+            if (countAfter < countBefore) {
+              depositedAny = true;
+            } else {
+              // Nothing deposited, chest might be full
+              logger.debug('No items deposited in this attempt, chest may be full');
+              break;
+            }
           } catch (innerErr) {
             // If deposit API failed (direction mismatch), fallback to quick move
             await this.safeQuickMove(stack.slot);
@@ -381,18 +411,42 @@ class DepositSugarcane extends IPlugin {
         }
       };
 
-      // Execute deposit attempts until inventory has no sugar cane
+      // Execute deposit attempts until inventory has no sugar cane or chest is full
       let safety = 0;
+      let noProgressCount = 0;
       while (this.getSugarcaneCount() > 0 && safety < 10) {
+        const beforeAttempt = this.getSugarcaneCount();
         await depositAllStacks();
         await this.sleep(150);
+        const afterAttempt = this.getSugarcaneCount();
+        
+        // If no progress was made, chest is likely full
+        if (beforeAttempt === afterAttempt) {
+          noProgressCount++;
+          if (noProgressCount >= 2) {
+            logger.warn('No progress after 2 attempts, chest appears full');
+            break;
+          }
+        } else {
+          noProgressCount = 0;
+          depositedAny = true;
+        }
+        
         safety++;
+      }
+      
+      const countAfterDeposit = this.getSugarcaneCount();
+      if (countAfterDeposit < countBeforeDeposit) {
+        depositedAny = true;
+        logger.info(`Deposited ${countBeforeDeposit - countAfterDeposit} sugarcane to chest`);
       }
     } catch (e) {
       logger.error('Failed while depositing sugarcane', e);
     } finally {
       try { await container.close(); } catch {}
     }
+    
+    return depositedAny;
   }
 
   async safeQuickMove(slot) {
