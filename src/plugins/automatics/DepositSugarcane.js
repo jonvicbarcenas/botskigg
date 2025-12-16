@@ -20,6 +20,8 @@ class DepositSugarcane extends IPlugin {
     this.isBusyDepositing = false;
     this.threshold = config.threshold ?? 64; // default stack
     this.mcData = null;
+    this.fullChests = new Set(); // Track full chests
+    this.fullChestsResetInterval = null;
   }
 
   async load() {
@@ -65,6 +67,14 @@ class DepositSugarcane extends IPlugin {
         this.monitorAndDeposit().catch(err => logger.debug(`Deposit monitor error: ${err.message}`));
       }, 4000);
 
+      // Reset full chests list every 2 minutes (in case they get emptied)
+      this.fullChestsResetInterval = setInterval(() => {
+        if (this.fullChests.size > 0) {
+          logger.debug(`Resetting ${this.fullChests.size} full chest markers`);
+          this.fullChests.clear();
+        }
+      }, 120000);
+
       // Optional chat command
       this.registerEvent('chat', this.handleChat.bind(this));
 
@@ -80,6 +90,10 @@ class DepositSugarcane extends IPlugin {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
+    }
+    if (this.fullChestsResetInterval) {
+      clearInterval(this.fullChestsResetInterval);
+      this.fullChestsResetInterval = null;
     }
     this.unregisterAllEvents();
     this.isLoaded = false;
@@ -137,19 +151,40 @@ class DepositSugarcane extends IPlugin {
       await this.sleep(800);
 
       // Loop deposit until inventory goes below threshold
+      let noChestAttempts = 0;
       while (this.getSugarcaneCount() >= (this.threshold || 64)) {
         // Ensure we are inside the chest area before scanning (no aborting)
         await this.ensureInChestArea(chestArea.center, chestArea.radius || 5);
 
-        // Find a nearby chest within radius
+        // Find a nearby chest within radius (excluding full ones)
         const chestBlock = this.findNearestChest(chestArea.center, chestArea.radius);
         if (!chestBlock) {
-          logger.warn('No chest found in chest area, retrying...');
+          noChestAttempts++;
+          if (noChestAttempts >= 3) {
+            logger.warn('No available chests found after 3 attempts. All chests may be full. Clearing full chest markers and retrying...');
+            this.fullChests.clear();
+            noChestAttempts = 0;
+          } else {
+            logger.warn('No available chest found in chest area, retrying...');
+          }
           await this.sleep(1000);
           continue;
         }
 
+        const countBefore = this.getSugarcaneCount();
         await this.depositToChest(chestBlock);
+        const countAfter = this.getSugarcaneCount();
+        
+        // Check if deposit was successful
+        if (countBefore === countAfter && countAfter > 0) {
+          // No items were deposited, chest is likely full
+          const chestKey = `${chestBlock.position.x},${chestBlock.position.y},${chestBlock.position.z}`;
+          this.fullChests.add(chestKey);
+          logger.warn(`Chest at ${chestKey} is full, marking and finding another chest`);
+        } else {
+          noChestAttempts = 0; // Reset counter on successful deposit
+        }
+        
         await this.sleep(300);
       }
 
@@ -203,6 +238,12 @@ class DepositSugarcane extends IPlugin {
       const block = this.bot.blockAt(v);
       if (!block) continue;
       if (block.type === chestId || block.type === trappedChestId || block.type === barrelId) {
+        // Skip chests marked as full
+        const chestKey = `${block.position.x},${block.position.y},${block.position.z}`;
+        if (this.fullChests.has(chestKey)) {
+          continue;
+        }
+        
         const dist = this.bot.entity.position.distanceTo(block.position);
         if (dist < bestDist) {
           best = block;
