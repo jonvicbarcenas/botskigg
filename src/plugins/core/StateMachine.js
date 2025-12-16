@@ -51,18 +51,95 @@ class StateMachine extends IPlugin {
       this.stateMachine.on('stateEntered', (state) => this.onStateEntered(state));
       this.stateMachine.on('stateExited', (state) => this.onStateExited(state));
       
+      // Start automatic behavior monitoring
+      this.startBehaviorMonitoring();
+      
       // Expose state machine to bot for other plugins
       this.bot.stateMachine = this;
       
       this.isLoaded = true;
-      logger.success('StateMachine plugin loaded with mineflayer-statemachine');
+      logger.success('StateMachine plugin loaded with dynamic behavior monitoring');
     } catch (error) {
       logger.error('Failed to load StateMachine plugin', error);
       throw error;
     }
   }
 
+  /**
+   * Start automatic behavior monitoring
+   */
+  startBehaviorMonitoring() {
+    // Monitor every 2 seconds for automatic state transitions
+    this.monitoringInterval = setInterval(() => {
+      this.checkAutomaticTransitions();
+    }, 2000);
+    
+    logger.info('Automatic behavior monitoring started');
+  }
+
+  /**
+   * Check for automatic state transitions based on conditions
+   */
+  checkAutomaticTransitions() {
+    try {
+      // Skip if not in idle state (don't interrupt active behaviors)
+      if (this.currentStateName !== 'idle') {
+        return;
+      }
+      
+      // Check for hunger (high priority)
+      if (this.bot.food < 16) {
+        const hasFood = this.bot.inventory.items().some(item => 
+          item.name.includes('bread') || 
+          item.name.includes('apple') || 
+          item.name.includes('carrot') || 
+          item.name.includes('potato') ||
+          item.name.includes('beef') ||
+          item.name.includes('pork') ||
+          item.name.includes('chicken')
+        );
+        
+        if (hasFood) {
+          logger.info('Bot is hungry, automatically switching to eating state');
+          this.setState('eating');
+          return;
+        }
+      }
+      
+      // Check for nearby enemies (highest priority)
+      const hostileMobs = ['zombie', 'skeleton', 'creeper', 'spider', 'enderman', 'witch', 'pillager'];
+      const enemy = this.bot.nearestEntity(entity => {
+        if (!entity || entity.type !== 'mob') return false;
+        const name = (entity.displayName || entity.name || '').toLowerCase();
+        return hostileMobs.some(mob => name.includes(mob)) &&
+               entity.position.distanceTo(this.bot.entity.position) < 8;
+      });
+      
+      if (enemy) {
+        const enemyName = enemy.displayName || enemy.name || 'hostile mob';
+        logger.info(`${enemyName} detected nearby, automatically switching to combat state`);
+        this.setState('fighting');
+        return;
+      }
+      
+      // Check for low health (flee behavior)
+      if (this.bot.health < 10) {
+        logger.warn('Low health detected, bot should seek safety');
+        // Could implement fleeing behavior here
+      }
+      
+    } catch (error) {
+      logger.error('Error in automatic behavior monitoring:', error);
+    }
+  }
+
   async unload() {
+    // Stop monitoring
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval);
+      this.monitoringInterval = null;
+    }
+    
     this.behaviors.clear();
     this.transitions = [];
     this.unregisterAllEvents();
@@ -79,7 +156,138 @@ class StateMachine extends IPlugin {
     idle.stateName = 'idle';
     this.behaviors.set('idle', idle);
     
-    logger.info('Default behaviors initialized');
+    // Auto-eat behavior - high priority survival behavior
+    const autoEat = this.createAutoEatBehavior();
+    this.behaviors.set('eating', autoEat);
+    
+    // Auto-defend behavior - highest priority combat behavior
+    const autoDefend = this.createAutoDefendBehavior();
+    this.behaviors.set('fighting', autoDefend);
+    
+    logger.info('Default behaviors initialized with dynamic actions');
+  }
+
+  /**
+   * Create auto-eat behavior
+   */
+  createAutoEatBehavior() {
+    const autoEat = new BehaviorIdle();
+    autoEat.stateName = 'eating';
+    
+    // Override the behavior to actually eat food
+    autoEat.onStateEntered = async () => {
+      logger.info('Bot is hungry, looking for food...');
+      await this.performEating();
+    };
+    
+    return autoEat;
+  }
+
+  /**
+   * Create auto-defend behavior
+   */
+  createAutoDefendBehavior() {
+    const autoDefend = new BehaviorIdle();
+    autoDefend.stateName = 'fighting';
+    
+    // Override the behavior to actually fight
+    autoDefend.onStateEntered = async () => {
+      logger.info('Bot detected threat, engaging in combat...');
+      await this.performCombat();
+    };
+    
+    return autoDefend;
+  }
+
+  /**
+   * Perform eating action
+   */
+  async performEating() {
+    try {
+      const food = this.bot.inventory.items().find(item => 
+        item.name.includes('bread') || 
+        item.name.includes('apple') || 
+        item.name.includes('carrot') || 
+        item.name.includes('potato') ||
+        item.name.includes('beef') ||
+        item.name.includes('pork') ||
+        item.name.includes('chicken')
+      );
+      
+      if (food) {
+        logger.info(`Eating ${food.name}...`);
+        await this.bot.equip(food, 'hand');
+        await this.bot.consume();
+        logger.success('Finished eating, returning to previous activity');
+        
+        // Return to idle after eating
+        setTimeout(() => {
+          if (this.currentStateName === 'eating') {
+            this.setState('idle');
+          }
+        }, 1000);
+      } else {
+        logger.warn('No food found in inventory');
+        this.setState('idle');
+      }
+    } catch (error) {
+      logger.error('Error while eating:', error);
+      this.setState('idle');
+    }
+  }
+
+  /**
+   * Perform combat action
+   */
+  async performCombat() {
+    try {
+      const hostileMobs = ['zombie', 'skeleton', 'creeper', 'spider', 'enderman', 'witch', 'pillager'];
+      const enemy = this.bot.nearestEntity(entity => {
+        if (!entity || entity.type !== 'mob') return false;
+        const name = (entity.displayName || entity.name || '').toLowerCase();
+        return hostileMobs.some(mob => name.includes(mob)) &&
+               entity.position.distanceTo(this.bot.entity.position) < 16;
+      });
+      
+      if (enemy) {
+        const enemyName = enemy.displayName || enemy.name || 'hostile mob';
+        logger.info(`Engaging ${enemyName}...`);
+        
+        // Equip weapon if available
+        const weapon = this.bot.inventory.items().find(item => 
+          item.name.includes('sword') || 
+          item.name.includes('axe') ||
+          item.name === 'bow'
+        );
+        
+        if (weapon) {
+          await this.bot.equip(weapon, 'hand');
+        }
+        
+        // Attack the enemy
+        await this.bot.attack(enemy);
+        
+        // Continue fighting until enemy is dead or out of range
+        const fightInterval = setInterval(() => {
+          if (!enemy.isValid || enemy.position.distanceTo(this.bot.entity.position) > 16) {
+            clearInterval(fightInterval);
+            logger.success('Combat finished, returning to idle');
+            if (this.currentStateName === 'fighting') {
+              this.setState('idle');
+            }
+          } else {
+            this.bot.attack(enemy);
+          }
+        }, 500);
+        
+      } else {
+        logger.info('No enemies found, returning to idle');
+        this.setState('idle');
+      }
+    } catch (error) {
+      logger.error('Error during combat:', error);
+      this.setState('idle');
+    }
   }
 
   /**
@@ -164,14 +372,15 @@ class StateMachine extends IPlugin {
    * Transition to a specific state
    */
   setState(stateName, force = false) {
-    const behavior = this.behaviors.get(stateName);
+    let behavior = this.behaviors.get(stateName);
     
     if (!behavior) {
-      // Auto-register a simple idle behavior for unknown states to improve resiliency
+      // Auto-register a simple idle behavior for unknown states
       try {
         const auto = new BehaviorIdle();
         auto.stateName = stateName;
         this.addBehavior(stateName, auto);
+        behavior = auto;
         logger.warn(`Auto-registered missing state behavior: ${stateName}`);
       } catch (e) {
         logger.error(`State not found and could not be auto-registered: ${stateName}`);
@@ -179,40 +388,33 @@ class StateMachine extends IPlugin {
       }
     }
 
-    // If already in the requested state, no-op without warning
+    // If already in the requested state, no-op
     if (this.currentStateName === stateName) {
       logger.debug(`Already in state: ${stateName}`);
       return true;
     }
 
     try {
-      if (force) {
-        if (this.stateMachine && typeof this.stateMachine.setState === 'function') {
+      // Always allow state transitions (simplified for reliability)
+      const prevState = this.currentStateName;
+      this.currentStateName = stateName;
+      
+      // Try to update underlying state machine
+      if (this.stateMachine) {
+        if (typeof this.stateMachine.setState === 'function') {
           this.stateMachine.setState(behavior);
-        } else if (this.stateMachine && typeof this.stateMachine.transitionTo === 'function') {
+        } else if (typeof this.stateMachine.transitionTo === 'function') {
           this.stateMachine.transitionTo(behavior);
-        } else {
-          // As a last resort, update current state name without invoking underlying lib
-          logger.warn('Underlying BotStateMachine has no setState/transitionTo. Forcing state name only.');
-        }
-      } else {
-        // Check if transition is valid through existing transitions
-        const canTransition = this.canTransitionTo(stateName);
-        if (canTransition) {
-          if (this.stateMachine && typeof this.stateMachine.setState === 'function') {
-            this.stateMachine.setState(behavior);
-          } else if (this.stateMachine && typeof this.stateMachine.transitionTo === 'function') {
-            this.stateMachine.transitionTo(behavior);
-          } else {
-            logger.warn('Underlying BotStateMachine has no setState/transitionTo. Applying state name only.');
-          }
-        } else {
-          logger.warn(`Cannot transition to ${stateName} from ${this.currentStateName}`);
-          return false;
         }
       }
       
-      this.currentStateName = stateName;
+      // Trigger behavior callbacks
+      if (behavior.onStateEntered) {
+        behavior.onStateEntered();
+      }
+      
+      this.addToHistory(stateName);
+      logger.info(`State changed: ${prevState} -> ${stateName}`);
       return true;
     } catch (error) {
       logger.error(`Error transitioning to ${stateName}`, error);

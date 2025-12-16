@@ -21,8 +21,15 @@ class AutoFarm extends IPlugin {
       'nether_wart': 3
     };
     this.farmInterval = null;
+    this.farmingInterval = null;
     this.harvestCount = 0;
     this.plantCount = 0;
+    this.stats = {
+      cropsHarvested: 0,
+      cropsPlanted: 0,
+      cyclesCompleted: 0,
+      startTime: null
+    };
     this.stateMachine = null;
     this.pluginLoader = null;
     this.pathfinder = null;
@@ -64,17 +71,8 @@ class AutoFarm extends IPlugin {
    * Setup state machine behaviors for farming
    */
   setupBehaviors() {
-    // Create farming behavior
-    const farmingBehavior = new BehaviorIdle();
-    farmingBehavior.stateName = 'farming';
-    farmingBehavior.onStateEntered = () => {
-      logger.debug('Entered farming state');
-      this.isFarming = true;
-    };
-    farmingBehavior.onStateExited = () => {
-      logger.debug('Exited farming state');
-      this.isFarming = false;
-    };
+    // Create dynamic farming behavior
+    const farmingBehavior = this.createFarmingBehavior();
     this.stateMachine.addBehavior('farming', farmingBehavior);
     
     // Create transitions
@@ -98,11 +96,86 @@ class AutoFarm extends IPlugin {
       }
     });
     
-    logger.info('Farming behaviors and transitions registered');
+    logger.info('Dynamic farming behaviors and transitions registered');
+  }
+
+  /**
+   * Create dynamic farming behavior
+   */
+  createFarmingBehavior() {
+    const farmingBehavior = new BehaviorIdle();
+    farmingBehavior.stateName = 'farming';
+    
+    farmingBehavior.onStateEntered = () => {
+      logger.info('Bot started autonomous farming');
+      this.isFarming = true;
+      this.startAutonomousFarming();
+    };
+    
+    farmingBehavior.onStateExited = () => {
+      logger.info('Bot stopped autonomous farming');
+      this.isFarming = false;
+      this.stopAutonomousFarming();
+    };
+    
+    return farmingBehavior;
+  }
+
+  /**
+   * Start autonomous farming loop
+   */
+  startAutonomousFarming() {
+    this.farmingInterval = setInterval(async () => {
+      if (this.isFarming && this.stateMachine.getState() === 'farming') {
+        try {
+          await this.performAutonomousFarmCycle();
+        } catch (error) {
+          logger.error('Error in autonomous farming cycle:', error);
+        }
+      }
+    }, 5000); // Check every 5 seconds
+  }
+
+  /**
+   * Stop autonomous farming loop
+   */
+  stopAutonomousFarming() {
+    if (this.farmingInterval) {
+      clearInterval(this.farmingInterval);
+      this.farmingInterval = null;
+    }
+  }
+
+  /**
+   * Perform one autonomous farm cycle
+   */
+  async performAutonomousFarmCycle() {
+    // Find mature crops nearby
+    const matureCrops = this.findMatureCrops(16);
+    
+    if (matureCrops.length > 0) {
+      logger.info(`Found ${matureCrops.length} mature crops, harvesting...`);
+      
+      for (const crop of matureCrops.slice(0, 3)) { // Limit to 3 crops per cycle
+        try {
+          await this.harvestCrop(crop);
+          await this.replantCrop(crop);
+          await this.sleep(500); // Small delay between crops
+        } catch (error) {
+          logger.error('Error harvesting crop:', error);
+        }
+      }
+      
+      this.stats.cyclesCompleted++;
+      logger.success(`Farming cycle completed. Total cycles: ${this.stats.cyclesCompleted}`);
+    } else {
+      logger.debug('No mature crops found, waiting for growth...');
+    }
   }
 
   async unload() {
     this.stopFarming();
+    this.stopAutonomousFarming();
     this.unregisterAllEvents();
     this.isLoaded = false;
     logger.info('AutoFarm plugin unloaded');
