@@ -176,13 +176,15 @@ class DepositSugarcane extends IPlugin {
         const countAfter = this.getSugarcaneCount();
         
         // Check if deposit was successful
-        if (!depositedAny || (countBefore === countAfter && countAfter > 0)) {
+        if (!depositedAny && countBefore === countAfter && countAfter > 0) {
           // No items were deposited, chest is likely full
           const chestKey = `${chestBlock.position.x},${chestBlock.position.y},${chestBlock.position.z}`;
           this.fullChests.add(chestKey);
           logger.warn(`Chest at ${chestKey} is full, marking and finding another chest`);
-        } else {
-          noChestAttempts = 0; // Reset counter on successful deposit
+        } else if (countAfter < countBefore) {
+          // Successfully deposited items, reset counter
+          noChestAttempts = 0;
+          logger.debug(`Successfully deposited ${countBefore - countAfter} sugarcane`);
         }
         
         await this.sleep(300);
