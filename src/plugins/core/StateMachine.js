@@ -107,15 +107,17 @@ class StateMachine extends IPlugin {
       }
       
       // Check for nearby enemies (highest priority)
+      const hostileMobs = ['zombie', 'skeleton', 'creeper', 'spider', 'enderman', 'witch', 'pillager'];
       const enemy = this.bot.nearestEntity(entity => {
-        return entity.type === 'mob' && 
-               entity.mobType && 
-               ['zombie', 'skeleton', 'creeper', 'spider', 'enderman'].includes(entity.mobType) &&
+        if (!entity || entity.type !== 'mob') return false;
+        const name = (entity.displayName || entity.name || '').toLowerCase();
+        return hostileMobs.some(mob => name.includes(mob)) &&
                entity.position.distanceTo(this.bot.entity.position) < 8;
       });
       
       if (enemy) {
-        logger.info(`Hostile ${enemy.mobType} detected nearby, automatically switching to combat state`);
+        const enemyName = enemy.displayName || enemy.name || 'hostile mob';
+        logger.info(`${enemyName} detected nearby, automatically switching to combat state`);
         this.setState('fighting');
         return;
       }
@@ -239,15 +241,17 @@ class StateMachine extends IPlugin {
    */
   async performCombat() {
     try {
+      const hostileMobs = ['zombie', 'skeleton', 'creeper', 'spider', 'enderman', 'witch', 'pillager'];
       const enemy = this.bot.nearestEntity(entity => {
-        return entity.type === 'mob' && 
-               entity.mobType && 
-               ['zombie', 'skeleton', 'creeper', 'spider', 'enderman'].includes(entity.mobType) &&
+        if (!entity || entity.type !== 'mob') return false;
+        const name = (entity.displayName || entity.name || '').toLowerCase();
+        return hostileMobs.some(mob => name.includes(mob)) &&
                entity.position.distanceTo(this.bot.entity.position) < 16;
       });
       
       if (enemy) {
-        logger.info(`Engaging ${enemy.mobType || 'hostile mob'}...`);
+        const enemyName = enemy.displayName || enemy.name || 'hostile mob';
+        logger.info(`Engaging ${enemyName}...`);
         
         // Equip weapon if available
         const weapon = this.bot.inventory.items().find(item => 
@@ -368,14 +372,15 @@ class StateMachine extends IPlugin {
    * Transition to a specific state
    */
   setState(stateName, force = false) {
-    const behavior = this.behaviors.get(stateName);
+    let behavior = this.behaviors.get(stateName);
     
     if (!behavior) {
-      // Auto-register a simple idle behavior for unknown states to improve resiliency
+      // Auto-register a simple idle behavior for unknown states
       try {
         const auto = new BehaviorIdle();
         auto.stateName = stateName;
         this.addBehavior(stateName, auto);
+        behavior = auto;
         logger.warn(`Auto-registered missing state behavior: ${stateName}`);
       } catch (e) {
         logger.error(`State not found and could not be auto-registered: ${stateName}`);
@@ -383,40 +388,33 @@ class StateMachine extends IPlugin {
       }
     }
 
-    // If already in the requested state, no-op without warning
+    // If already in the requested state, no-op
     if (this.currentStateName === stateName) {
       logger.debug(`Already in state: ${stateName}`);
       return true;
     }
 
     try {
-      if (force) {
-        if (this.stateMachine && typeof this.stateMachine.setState === 'function') {
+      // Always allow state transitions (simplified for reliability)
+      const prevState = this.currentStateName;
+      this.currentStateName = stateName;
+      
+      // Try to update underlying state machine
+      if (this.stateMachine) {
+        if (typeof this.stateMachine.setState === 'function') {
           this.stateMachine.setState(behavior);
-        } else if (this.stateMachine && typeof this.stateMachine.transitionTo === 'function') {
+        } else if (typeof this.stateMachine.transitionTo === 'function') {
           this.stateMachine.transitionTo(behavior);
-        } else {
-          // As a last resort, update current state name without invoking underlying lib
-          logger.warn('Underlying BotStateMachine has no setState/transitionTo. Forcing state name only.');
-        }
-      } else {
-        // Check if transition is valid through existing transitions
-        const canTransition = this.canTransitionTo(stateName);
-        if (canTransition) {
-          if (this.stateMachine && typeof this.stateMachine.setState === 'function') {
-            this.stateMachine.setState(behavior);
-          } else if (this.stateMachine && typeof this.stateMachine.transitionTo === 'function') {
-            this.stateMachine.transitionTo(behavior);
-          } else {
-            logger.warn('Underlying BotStateMachine has no setState/transitionTo. Applying state name only.');
-          }
-        } else {
-          logger.warn(`Cannot transition to ${stateName} from ${this.currentStateName}`);
-          return false;
         }
       }
       
-      this.currentStateName = stateName;
+      // Trigger behavior callbacks
+      if (behavior.onStateEntered) {
+        behavior.onStateEntered();
+      }
+      
+      this.addToHistory(stateName);
+      logger.info(`State changed: ${prevState} -> ${stateName}`);
       return true;
     } catch (error) {
       logger.error(`Error transitioning to ${stateName}`, error);
