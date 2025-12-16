@@ -172,16 +172,19 @@ class DepositSugarcane extends IPlugin {
         }
 
         const countBefore = this.getSugarcaneCount();
+        const chestKey = `${chestBlock.position.x},${chestBlock.position.y},${chestBlock.position.z}`;
         const depositedAny = await this.depositToChest(chestBlock);
         const countAfter = this.getSugarcaneCount();
         
         // Check if deposit was successful
-        if (!depositedAny && countBefore === countAfter && countAfter > 0) {
-          // No items were deposited, chest is likely full
-          const chestKey = `${chestBlock.position.x},${chestBlock.position.y},${chestBlock.position.z}`;
+        if (!depositedAny || (countBefore === countAfter && countAfter > 0)) {
+          // No items were deposited, chest is full
           this.fullChests.add(chestKey);
           logger.warn(`Chest at ${chestKey} is full, marking and finding another chest`);
-        } else if (countAfter < countBefore) {
+          continue; // Skip to next iteration to find another chest
+        }
+        
+        if (countAfter < countBefore) {
           // Successfully deposited items, reset counter
           noChestAttempts = 0;
           logger.debug(`Successfully deposited ${countBefore - countAfter} sugarcane`);
@@ -372,12 +375,12 @@ class DepositSugarcane extends IPlugin {
       if (emptySlots === 0) {
         // Check if any existing stacks can accept more items
         const sugarStacks = containerSlots.filter(slot => slot && slot.type === sugarItem.id);
-        const hasStackSpace = sugarStacks.some(slot => slot.count < slot.stackSize);
+        const hasStackSpace = sugarStacks.some(slot => slot.count < (slot.stackSize || 64));
         
         if (!hasStackSpace) {
           logger.warn('Chest is completely full, no space for sugarcane');
           try { await container.close(); } catch {}
-          return depositedAny;
+          return false; // Explicitly return false to indicate chest is full
         }
       }
 
@@ -427,6 +430,7 @@ class DepositSugarcane extends IPlugin {
           noProgressCount++;
           if (noProgressCount >= 2) {
             logger.warn('No progress after 2 attempts, chest appears full');
+            depositedAny = false; // Mark as failed deposit
             break;
           }
         } else {
