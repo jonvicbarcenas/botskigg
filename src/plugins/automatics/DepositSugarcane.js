@@ -263,7 +263,7 @@ class DepositSugarcane extends IPlugin {
       attempts++;
 
       // Temporarily switch to idle to allow navigation
-      const wasDepositing = this.bot.stateMachine?.getStateName() === 'depositing';
+      const wasDepositing = this.bot.stateMachine?.getState() === 'depositing';
       if (wasDepositing) {
         this.bot.stateMachine.setState('idle', true);
       }
@@ -321,7 +321,7 @@ class DepositSugarcane extends IPlugin {
 
   async depositToChest(chestBlock) {
     // Temporarily switch to idle to allow navigation
-    const wasDepositing = this.bot.stateMachine?.getStateName() === 'depositing';
+    const wasDepositing = this.bot.stateMachine?.getState() === 'depositing';
     if (wasDepositing) {
       this.bot.stateMachine.setState('idle', true);
     }
