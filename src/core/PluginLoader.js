@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import logger from '../utils/Logger.js';
+import IPlugin from '../interfaces/IPlugin.js'; // Import IPlugin
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,6 +78,11 @@ class PluginLoader {
       // Instantiate plugin with config
       const plugin = new PluginClass(this.bot, pluginConfig);
       
+      // Enforce IPlugin interface
+      if (!(plugin instanceof IPlugin)) {
+        throw new Error(`Plugin ${pluginInfo.name} does not extend IPlugin`);
+      }
+
       // Check if plugin implements required methods
       if (typeof plugin.load !== 'function') {
         throw new Error(`Plugin ${pluginInfo.name} does not implement load() method`);
