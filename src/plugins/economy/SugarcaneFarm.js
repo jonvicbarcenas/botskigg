@@ -1,8 +1,7 @@
-import IPlugin from '../../interfaces/IPlugin.js';
+import BaseBehaviorPlugin from '../base/BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
-import { BehaviorIdle } from '../core/StateMachine.js';
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import minecraftData from 'minecraft-data';
 import { plugin as collectBlock } from 'mineflayer-collectblock';
@@ -13,89 +12,56 @@ const __dirname = path.dirname(__filename);
 /**
  * SugarcaneFarm Plugin - Handles automated sugarcane farming
  */
-class SugarcaneFarm extends IPlugin {
+class SugarcaneFarm extends BaseBehaviorPlugin {
   constructor(bot, config = {}) {
     super('SugarcaneFarm', bot, config);
     this.isFarming = false;
     this.farmArea = null;
     this.farmInterval = null;
     this.harvestCount = 0;
-    this.stateMachine = null;
     this.recentlyHarvested = new Map(); // Track recently harvested positions
     this.harvestCooldown = 5000; // 5 seconds cooldown per position
     this.pluginLoader = null; // Will be set during load
     this.pathfinder = null; // Will be set during load
   }
 
-  async load() {
-    try {
-      // Load mineflayer-collectblock plugin
-      if (!this.bot.collectBlock) {
-        this.bot.loadPlugin(collectBlock);
-        logger.info('Loaded mineflayer-collectblock plugin');
-      }
-      
-      // Get pluginLoader reference from BotClient
-      const BotClient = (await import('../../core/BotClient.js')).default;
-      const botClient = BotClient.getInstance();
-      this.pluginLoader = botClient.getPluginLoader();
-      
-      // Get pathfinder directly from the Navigation plugin's pathfinder utility
-      const navigation = this.pluginLoader.getPlugin('Navigation');
-      if (navigation && navigation.pathfinder) {
-        this.pathfinder = navigation.pathfinder;
-        logger.info('Pathfinder initialized for SugarcaneFarm');
-      } else {
-        logger.warn('Navigation plugin or pathfinder not available');
-      }
-      
-      // Get StateMachine reference
-      this.stateMachine = this.bot.stateMachine;
-      
-      // Load farm area from waypoints
-      this.loadFarmArea();
-      
-      // Setup farming behaviors if state machine is available
-      if (this.stateMachine) {
-        this.setupBehaviors();
-      }
-      
-      // Register chat commands
-      this.registerEvent('chat', this.handleChat.bind(this));
-      
-      this.isLoaded = true;
-      logger.success('SugarcaneFarm plugin loaded');
-      
-      // Auto-start farming if enabled in config
-      if (this.config.autoStart !== false) {
-        // Wait a bit for bot to fully initialize
-        setTimeout(async () => {
-          await this.startFarming();
-          logger.info('Auto-started sugarcane farming');
-        }, 3000);
-      }
-    } catch (error) {
-      logger.error('Failed to load SugarcaneFarm plugin', error);
-      throw error;
+  async onLoad() {
+    // Load mineflayer-collectblock plugin
+    if (!this.bot.collectBlock) {
+      this.bot.loadPlugin(collectBlock);
+      logger.info('Loaded mineflayer-collectblock plugin');
     }
-  }
-
-  /**
-   * Load farm area from waypoints.json
-   */
-  loadFarmArea() {
-    try {
-      const waypointsPath = path.join(__dirname, '../../../data/waypoints.json');
-      const data = JSON.parse(fs.readFileSync(waypointsPath, 'utf8'));
-      
-      if (data.areas && data.areas.sugarcane_farm) {
-        this.farmArea = data.areas.sugarcane_farm;
-        logger.info(`Loaded sugarcane farm area: ${JSON.stringify(this.farmArea)}`);
-      } else {
-        logger.warn('No sugarcane_farm area found in waypoints.json');
-      }
-    } catch (error) {
-      logger.error('Failed to load farm area', error);
+    
+    // Get pluginLoader reference from BotClient
+    const BotClient = (await import('../../core/BotClient.js')).default;
+    const botClient = BotClient.getInstance();
+    this.pluginLoader = botClient.getPluginLoader();
+    
+    // Get pathfinder directly from the Navigation plugin's pathfinder utility
+    const navigation = this.pluginLoader.getPlugin('Navigation');
+    if (navigation && navigation.pathfinder) {
+      this.pathfinder = navigation.pathfinder;
+      logger.info('Pathfinder initialized for SugarcaneFarm');
+    } else {
+      logger.warn('Navigation plugin or pathfinder not available');
+    }
+    
+    // Load farm area from waypoints
+    this.loadFarmArea();
+    
+    // Setup farming behaviors
+    this.setupBehaviors();
+    
+    // Register chat commands
+    this.registerEvent('chat', this.handleChat.bind(this));
+    
+    // Auto-start farming if enabled in config
+    if (this.config.autoStart !== false) {
+      // Wait a bit for bot to fully initialize
+      setTimeout(async () => {
+        await this.startFarming();
+        logger.info('Auto-started sugarcane farming');
+      }, 3000);
     }
   }
 
@@ -103,39 +69,22 @@ class SugarcaneFarm extends IPlugin {
    * Setup state machine behaviors for sugarcane farming
    */
   setupBehaviors() {
-    // Create farming_sugarcane behavior
-    const farmingBehavior = new BehaviorIdle();
-    farmingBehavior.stateName = 'farming_sugarcane';
-    farmingBehavior.onStateEntered = () => {
-      logger.debug('Entered farming_sugarcane state');
-      this.isFarming = true;
-    };
-    farmingBehavior.onStateExited = () => {
-      logger.debug('Exited farming_sugarcane state');
-      this.isFarming = false;
-    };
-    this.stateMachine.addBehavior('farming_sugarcane', farmingBehavior);
+    // Register farming_sugarcane behavior
+    this.registerBehavior('farming_sugarcane', undefined,
+      () => {
+        logger.debug('Entered farming_sugarcane state');
+        this.isFarming = true;
+      },
+      () => {
+        logger.debug('Exited farming_sugarcane state');
+        this.isFarming = false;
+      }
+    );
     
     // Create transitions
-    this.stateMachine.createTransition({
-      parent: 'idle',
-      child: 'farming_sugarcane',
-      name: 'idle_to_farming_sugarcane',
-      shouldTransition: () => false, // Manual transition
-      onTransition: () => {
-        logger.debug('Transitioning from idle to farming_sugarcane');
-      }
-    });
+    this.createTransition('idle', 'farming_sugarcane', () => false); // Manual transition
     
-    this.stateMachine.createTransition({
-      parent: 'farming_sugarcane',
-      child: 'idle',
-      name: 'farming_sugarcane_to_idle',
-      shouldTransition: () => !this.isFarming,
-      onTransition: () => {
-        logger.debug('Transitioning from farming_sugarcane to idle');
-      }
-    });
+    this.createTransition('farming_sugarcane', 'idle', () => !this.isFarming);
     
     logger.info('Sugarcane farming behaviors and transitions registered');
   }
@@ -321,7 +270,8 @@ class SugarcaneFarm extends IPlugin {
       // Find the base block (bottom sugarcane block)
       let baseBlock = block;
       let currentBlock = block;
-      while (true) {
+      let depth = 0;
+      while (depth < 10) { // Safety limit
         const blockBelow = this.bot.blockAt(currentBlock.position.offset(0, -1, 0));
         if (blockBelow && blockBelow.name === 'sugar_cane') {
           baseBlock = blockBelow;
@@ -329,6 +279,7 @@ class SugarcaneFarm extends IPlugin {
         } else {
           break;
         }
+        depth++;
       }
 
       // Skip if we already processed this base
@@ -394,7 +345,8 @@ class SugarcaneFarm extends IPlugin {
       // Find the base block to mark as harvested
       let baseBlock = block;
       let currentBlock = block;
-      while (true) {
+      let depth = 0;
+      while (depth < 10) { // Safety limit
         const blockBelow = this.bot.blockAt(currentBlock.position.offset(0, -1, 0));
         if (blockBelow && blockBelow.name === 'sugar_cane') {
           baseBlock = blockBelow;
@@ -402,6 +354,7 @@ class SugarcaneFarm extends IPlugin {
         } else {
           break;
         }
+        depth++;
       }
 
       // Always move close to the sugarcane before harvesting

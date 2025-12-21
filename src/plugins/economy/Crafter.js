@@ -136,26 +136,21 @@ class Crafter extends IPlugin {
   }
 
   async craftWithTable(recipe, amount, craftingTable) {
-    try {
-      // Move to crafting table
-      const distance = this.bot.entity.position.distanceTo(craftingTable.position);
-      if (distance > 4) {
-        await this.bot.pathfinder.goto(
-          craftingTable.position.x,
-          craftingTable.position.y,
-          craftingTable.position.z,
-          3
-        );
-      }
-
-      // Craft with table
-      await this.bot.craft(recipe, amount, craftingTable);
-      this.bot.chat(`Successfully crafted ${amount}x ${recipe.name} using crafting table`);
-      logger.success(`Crafted ${amount}x ${recipe.name}`);
-      
-    } catch (error) {
-      throw error;
+    // Move to crafting table
+    const distance = this.bot.entity.position.distanceTo(craftingTable.position);
+    if (distance > 4) {
+      await this.bot.pathfinder.goto(
+        craftingTable.position.x,
+        craftingTable.position.y,
+        craftingTable.position.z,
+        3
+      );
     }
+
+    // Craft with table
+    await this.bot.craft(recipe, amount, craftingTable);
+    this.bot.chat(`Successfully crafted ${amount}x ${recipe.name} using crafting table`);
+    logger.success(`Crafted ${amount}x ${recipe.name}`);
   }
 
   async findCraftingTable() {

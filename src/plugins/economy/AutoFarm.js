@@ -1,13 +1,10 @@
-import IPlugin from '../../interfaces/IPlugin.js';
+import BaseBehaviorPlugin from '../base/BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
-import mineflayerStateMachine from 'mineflayer-statemachine';
-
-const { BehaviorIdle, StateTransition } = mineflayerStateMachine;
 
 /**
  * AutoFarm Plugin - Handles automated farming
  */
-class AutoFarm extends IPlugin {
+class AutoFarm extends BaseBehaviorPlugin {
   constructor(bot, config = {}) {
     super('AutoFarm', bot, config);
     this.isFarming = false;
@@ -21,7 +18,6 @@ class AutoFarm extends IPlugin {
       'nether_wart': 3
     };
     this.farmInterval = null;
-    this.farmingInterval = null;
     this.harvestCount = 0;
     this.plantCount = 0;
     this.stats = {
@@ -30,103 +26,61 @@ class AutoFarm extends IPlugin {
       cyclesCompleted: 0,
       startTime: null
     };
-    this.stateMachine = null;
     this.pluginLoader = null;
     this.pathfinder = null;
   }
 
-  async load() {
-    try {
-      // Get StateMachine reference
-      this.stateMachine = this.bot.stateMachine;
-      
-      // Get pluginLoader reference from BotClient
-      const BotClient = (await import('../../core/BotClient.js')).default;
-      const botClient = BotClient.getInstance();
-      this.pluginLoader = botClient.getPluginLoader();
-      
-      // Get pathfinder from Navigation plugin
-      const navigation = this.pluginLoader.getPlugin('Navigation');
-      if (navigation && navigation.pathfinder) {
-        this.pathfinder = navigation.pathfinder;
-      }
-      
-      // Setup farming behaviors if state machine is available
-      if (this.stateMachine) {
-        this.setupBehaviors();
-      }
-      
-      // Register chat commands
-      this.registerEvent('chat', this.handleChat);
-      
-      this.isLoaded = true;
-      logger.success('AutoFarm plugin loaded');
-    } catch (error) {
-      logger.error('Failed to load AutoFarm plugin', error);
-      throw error;
+  async onLoad() {
+    // Get pluginLoader reference from BotClient
+    const BotClient = (await import('../../core/BotClient.js')).default;
+    const botClient = BotClient.getInstance();
+    this.pluginLoader = botClient.getPluginLoader();
+    
+    // Get pathfinder from Navigation plugin
+    const navigation = this.pluginLoader.getPlugin('Navigation');
+    if (navigation && navigation.pathfinder) {
+      this.pathfinder = navigation.pathfinder;
     }
+    
+    // Setup farming behaviors
+    this.setupBehaviors();
+    
+    // Register chat commands
+    this.registerEvent('chat', this.handleChat);
   }
 
   /**
    * Setup state machine behaviors for farming
    */
   setupBehaviors() {
-    // Create dynamic farming behavior
-    const farmingBehavior = this.createFarmingBehavior();
-    this.stateMachine.addBehavior('farming', farmingBehavior);
+    // Register dynamic farming behavior
+    this.registerBehavior('farming', undefined,
+      () => {
+        logger.info('Bot started autonomous farming');
+        this.isFarming = true;
+        this.startAutonomousFarming();
+      },
+      () => {
+        logger.info('Bot stopped autonomous farming');
+        this.isFarming = false;
+        this.stopAutonomousFarming();
+      }
+    );
     
     // Create transitions
-    this.stateMachine.createTransition({
-      parent: 'idle',
-      child: 'farming',
-      name: 'idle_to_farming',
-      shouldTransition: () => false, // Manual transition
-      onTransition: () => {
-        logger.debug('Transitioning from idle to farming');
-      }
-    });
+    this.createTransition('idle', 'farming', () => false); // Manual transition
     
-    this.stateMachine.createTransition({
-      parent: 'farming',
-      child: 'idle',
-      name: 'farming_to_idle',
-      shouldTransition: () => !this.isFarming,
-      onTransition: () => {
-        logger.debug('Transitioning from farming to idle');
-      }
-    });
+    this.createTransition('farming', 'idle', () => !this.isFarming);
     
     logger.info('Dynamic farming behaviors and transitions registered');
-  }
-
-  /**
-   * Create dynamic farming behavior
-   */
-  createFarmingBehavior() {
-    const farmingBehavior = new BehaviorIdle();
-    farmingBehavior.stateName = 'farming';
-    
-    farmingBehavior.onStateEntered = () => {
-      logger.info('Bot started autonomous farming');
-      this.isFarming = true;
-      this.startAutonomousFarming();
-    };
-    
-    farmingBehavior.onStateExited = () => {
-      logger.info('Bot stopped autonomous farming');
-      this.isFarming = false;
-      this.stopAutonomousFarming();
-    };
-    
-    return farmingBehavior;
   }
 
   /**
    * Start autonomous farming loop
    */
   startAutonomousFarming() {
-    this.farmingInterval = setInterval(async () => {
-      if (this.isFarming && this.stateMachine.getState() === 'farming') {
+    this.farmInterval = setInterval(async () => {
+      if (this.isFarming && this.getState() === 'farming') {
         try {
           await this.performAutonomousFarmCycle();
         } catch (error) {
@@ -140,9 +94,9 @@ class AutoFarm extends IPlugin {
    * Stop autonomous farming loop
    */
   stopAutonomousFarming() {
-    if (this.farmingInterval) {
-      clearInterval(this.farmingInterval);
-      this.farmingInterval = null;
+    if (this.farmInterval) {
+      clearInterval(this.farmInterval);
+      this.farmInterval = null;
     }
   }
 
@@ -175,7 +129,6 @@ class AutoFarm extends IPlugin {
 
   async unload() {
     this.stopFarming();
-    this.stopAutonomousFarming();
     this.unregisterAllEvents();
     this.isLoaded = false;
     logger.info('AutoFarm plugin unloaded');
@@ -207,34 +160,22 @@ class AutoFarm extends IPlugin {
     this.plantCount = 0;
 
     // Set state to farming
-    if (this.stateMachine) {
-      this.stateMachine.setState('farming');
-    }
+    this.setState('farming');
 
     logger.info('Starting auto-farm...');
     
-    // Start farming loop
-    this.farmInterval = setInterval(async () => {
-      if (this.isFarming) {
-        await this.farmCycle();
-      }
-    }, 5000); // Check every 5 seconds
+    // Logic is handled by onStateEntered
   }
 
   stopFarming() {
     this.isFarming = false;
     
-    if (this.farmInterval) {
-      clearInterval(this.farmInterval);
-      this.farmInterval = null;
-    }
-    
     // Return to idle state
-    if (this.stateMachine) {
-      this.stateMachine.setState('idle');
-    }
+    this.setState('idle');
     
     logger.info('Auto-farming stopped');
+    
+    // Logic is handled by onStateExited
   }
 
   async farmCycle() {

@@ -262,7 +262,7 @@ class DepositSugarcane extends IPlugin {
   async ensureInChestArea(center, radius) {
     // Keep trying until within radius + 1
     let attempts = 0;
-    while (true) {
+    while (attempts < 20) { // Safety limit instead of true
       const dist = this.bot.entity.position.distanceTo(new Vec3(center.x, center.y, center.z));
       if (dist <= radius + 1) return; // reached area
       attempts++;
@@ -317,7 +317,9 @@ class DepositSugarcane extends IPlugin {
           this.bot.pathfinder.setGoal(goal);
           await this.sleep(1200);
           this.bot.pathfinder.setGoal(null);
-        } catch {}
+        } catch (e) {
+          // Ignore nudge errors
+        }
         attempts = 0; // reset attempts after nudge
       }
       await this.sleep(500);
@@ -379,7 +381,7 @@ class DepositSugarcane extends IPlugin {
         
         if (!hasStackSpace) {
           logger.warn('Chest is completely full, no space for sugarcane');
-          try { await container.close(); } catch {}
+          try { await container.close(); } catch (e) { /* ignore */ }
           return false; // Explicitly return false to indicate chest is full
         }
       }
@@ -449,7 +451,7 @@ class DepositSugarcane extends IPlugin {
     } catch (e) {
       logger.error('Failed while depositing sugarcane', e);
     } finally {
-      try { await container.close(); } catch {}
+      try { await container.close(); } catch (e) { /* ignore */ }
     }
     
     return depositedAny;

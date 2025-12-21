@@ -16,16 +16,14 @@
     "autoRespawn": true,
     "autoReconnect": true,
     "reconnectDelay": 5000,
-    "chatCommandPrefix": "!",
-    "lookAtPlayerWhenTalking": true
+    "chatCommandPrefix": "!"
   },
   "features": {
     "stateMachine": true,
     "pathfinder": true,
     "webViewer": true,
-    "webInventory": false,
     "autoEat": true,
-    "autoCombat": false,
+    "autoCombat": true,
     "autoFarm": false
   },
   "webViewer": {
@@ -33,7 +31,12 @@
     "host": "0.0.0.0",
     "firstPerson": true
   },
+  "webInventory": {
+    "enabled": true,
+    "port": 3001,
+    "host": "0.0.0.0"
+  },
   "sugarcaneFarm": {
-    "autoStart": true
+    "autoStart": false
   }
 }

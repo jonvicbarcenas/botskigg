@@ -1,14 +1,11 @@
-import IPlugin from '../../interfaces/IPlugin.js';
+import BaseBehaviorPlugin from '../base/BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
 import { filterTargets } from '../../utils/targets.js';
-import mineflayerStateMachine from 'mineflayer-statemachine';
-
-const { BehaviorIdle, StateTransition } = mineflayerStateMachine;
 
 /**
  * CombatManager Plugin - Handles combat and target management
  */
-class CombatManager extends IPlugin {
+class CombatManager extends BaseBehaviorPlugin {
   constructor(bot, config = {}) {
     super('CombatManager', bot, config);
     this.isInCombat = false;
@@ -19,72 +16,44 @@ class CombatManager extends IPlugin {
       'stray', 'cave_spider', 'silverfish', 'blaze', 'ghast'
     ];
     this.attackRange = 3;
-    this.autoAttack = false;
+    // Check both plugin-specific config and global features config
+    this.autoAttack = config.autoCombat || this.bot.config?.features?.autoCombat || false;
     this.combatInterval = null;
-    this.stateMachine = null;
   }
 
-  async load() {
-    try {
-      // Get StateMachine reference
-      this.stateMachine = this.bot.stateMachine;
-      
-      // Setup combat behaviors if state machine is available
-      if (this.stateMachine) {
-        this.setupBehaviors();
-      }
-      
-      // Register event handlers
-      this.registerEvent('entityHurt', this.onEntityHurt);
-      this.registerEvent('physicsTick', this.onPhysicsTick);
-      this.registerEvent('chat', this.handleChat);
-      
-      this.isLoaded = true;
-      logger.success('CombatManager plugin loaded');
-    } catch (error) {
-      logger.error('Failed to load CombatManager plugin', error);
-      throw error;
-    }
+  async onLoad() {
+    this.setupBehaviors();
+    
+    // Register event handlers
+    this.registerEvent('entityHurt', this.onEntityHurt);
+    this.registerEvent('physicsTick', this.onPhysicsTick);
+    this.registerEvent('chat', this.handleChat);
   }
 
   /**
    * Setup state machine behaviors for combat
    */
   setupBehaviors() {
-    // Create fighting behavior
-    const fightingBehavior = new BehaviorIdle();
-    fightingBehavior.stateName = 'fighting';
-    fightingBehavior.onStateEntered = () => {
-      logger.debug('Entered fighting state');
-      this.isInCombat = true;
-    };
-    fightingBehavior.onStateExited = () => {
-      logger.debug('Exited fighting state');
-      this.isInCombat = false;
-    };
-    this.stateMachine.addBehavior('fighting', fightingBehavior);
+    // Register fighting behavior
+    this.registerBehavior('fighting', undefined, 
+      () => {
+        logger.debug('Entered fighting state');
+        this.isInCombat = true;
+      },
+      () => {
+        logger.debug('Exited fighting state');
+        this.isInCombat = false;
+      }
+    );
     
     // Create transitions
-    this.stateMachine.createTransition({
-      parent: 'idle',
-      child: 'fighting',
-      name: 'idle_to_fighting',
-      shouldTransition: () => this.autoAttack && this.findNearestHostile() !== null,
-      onTransition: () => {
-        logger.debug('Transitioning from idle to fighting');
-      }
-    });
+    this.createTransition('idle', 'fighting', 
+      () => this.autoAttack && this.findNearestHostile() !== null
+    );
     
-    this.stateMachine.createTransition({
-      parent: 'fighting',
-      child: 'idle',
-      name: 'fighting_to_idle',
-      shouldTransition: () => !this.autoAttack || this.currentTarget === null || !this.currentTarget.isValid,
-      onTransition: () => {
-        logger.debug('Transitioning from fighting to idle');
-        this.currentTarget = null;
-      }
-    });
+    this.createTransition('fighting', 'idle', 
+      () => !this.autoAttack || this.currentTarget === null || !this.currentTarget.isValid
+    );
     
     logger.info('Combat behaviors and transitions registered');
   }
