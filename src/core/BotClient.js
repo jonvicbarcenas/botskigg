@@ -2,6 +2,12 @@ import mineflayer from 'mineflayer';
 import { plugin as pvp } from 'mineflayer-pvp';
 import { plugin as movement } from 'mineflayer-movement';
 import hawkeye from 'minecrafthawkeye';
+import armorManagerPkg from 'mineflayer-armor-manager';
+import toolPluginPkg from 'mineflayer-tool';
+import bloodhoundPkg from 'mineflayer-bloodhound';
+const armorManager = armorManagerPkg.default || armorManagerPkg;
+const toolPlugin = toolPluginPkg.plugin || toolPluginPkg.default || toolPluginPkg;
+const bloodhound = bloodhoundPkg.default || bloodhoundPkg;
 import logger from '../utils/Logger.js';
 import StateManager from './StateManager.js';
 import EventManager from './EventManager.js';
@@ -106,6 +112,15 @@ class BotClient {
     this.bot.loadPlugin(pvp);
     this.bot.loadPlugin(movement);
     this.bot.loadPlugin(hawkeye.default || hawkeye);
+    this.bot.loadPlugin(armorManager);
+    this.bot.loadPlugin(toolPlugin);
+
+    if (typeof bloodhound === 'function') {
+      this.bot.loadPlugin(bloodhound);
+      logger.info('✓ Bloodhound plugin loaded');
+    } else {
+      logger.error('Failed to load Bloodhound: plugin is not a function', bloodhound);
+    }
 
     // Attach config to bot for plugin access
     this.bot.config = this.config;
@@ -264,15 +279,17 @@ class BotClient {
    */
   getStatus() {
     return {
-      isRunning: this.isRunning,
-      username: this.bot?.username,
-      health: this.bot?.health,
-      food: this.bot?.food,
-      position: this.bot?.entity?.position,
-      gameMode: this.bot?.game?.gameMode,
-      states: this.stateManager.getAllStates(),
-      plugins: this.pluginLoader?.getStats(),
-      events: this.eventManager?.getStats()
+      ...this.bot?.entity ? {
+        isRunning: this.isRunning,
+        username: this.bot?.username,
+        health: this.bot?.health,
+        food: this.bot?.food,
+        position: this.bot?.entity?.position,
+        gameMode: this.bot?.game?.gameMode,
+        states: this.stateManager.getAllStates(),
+        plugins: this.pluginLoader?.getStats(),
+        events: this.eventManager?.getStats()
+      } : { isRunning: this.isRunning }
     };
   }
 

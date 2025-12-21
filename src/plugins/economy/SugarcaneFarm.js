@@ -26,6 +26,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
   }
 
   async onLoad() {
+    logger.debug(`SugarcaneFarm onLoad: this.name=${this.name}, type of loadFarmArea=${typeof this.loadFarmArea}`);
     // Load mineflayer-collectblock plugin
     if (!this.bot.collectBlock) {
       this.bot.loadPlugin(collectBlock);

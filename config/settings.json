@@ -24,7 +24,9 @@
     "webViewer": true,
     "autoEat": true,
     "autoCombat": false,
-    "autoFarm": false
+    "autoFarm": false,
+    "armorManager": true,
+    "toolManager": true
   },
   "webViewer": {
     "port": 3000,
@@ -44,7 +46,10 @@
     "useMelee": true,
     "useLongRange": true,
     "target": [
-      "Dainsleif"
+      "Dainsleifz"
     ]
+  },
+  "combat": {
+    "autoRetaliate": true
   }
 }

@@ -33,11 +33,11 @@ class AutoEat extends IPlugin {
     ];
     // Broad edible whitelist (covers most versions)
     this.edible = new Set([
-      'apple','golden_apple','enchanted_golden_apple','golden_carrot','carrot','potato','baked_potato','beetroot','beetroot_soup','bread','cake','cookie','pumpkin_pie',
-      'mushroom_stew','rabbit_stew','suspicious_stew','chorus_fruit',
-      'dried_kelp','sweet_berries','glow_berries',
-      'cooked_beef','beef','cooked_porkchop','porkchop','cooked_mutton','mutton','cooked_chicken','chicken','cooked_rabbit','rabbit',
-      'cooked_cod','cod','cooked_salmon','salmon','tropical_fish','pufferfish'
+      'apple', 'golden_apple', 'enchanted_golden_apple', 'golden_carrot', 'carrot', 'potato', 'baked_potato', 'beetroot', 'beetroot_soup', 'bread', 'cake', 'cookie', 'pumpkin_pie',
+      'mushroom_stew', 'rabbit_stew', 'suspicious_stew', 'chorus_fruit',
+      'dried_kelp', 'sweet_berries', 'glow_berries',
+      'cooked_beef', 'beef', 'cooked_porkchop', 'porkchop', 'cooked_mutton', 'mutton', 'cooked_chicken', 'chicken', 'cooked_rabbit', 'rabbit',
+      'cooked_cod', 'cod', 'cooked_salmon', 'salmon', 'tropical_fish', 'pufferfish'
     ]);
     this.blacklist = new Set([
       'rotten_flesh',
@@ -147,6 +147,13 @@ class AutoEat extends IPlugin {
     if (this.isEating) return;
     if (!force && !this.needsFood()) return;
 
+    const food = this.pickFoodItem();
+    if (!food) {
+      // Only warn if we actually need food or it was forced
+      logger.warn('No edible food found in inventory');
+      return;
+    }
+
     this.isEating = true;
 
     // Pause states similar to deposit
@@ -163,12 +170,6 @@ class AutoEat extends IPlugin {
       }
       if (this.bot.stateMachine) {
         this.bot.stateMachine.setState('eating', true);
-      }
-
-      const food = this.pickFoodItem();
-      if (!food) {
-        logger.warn('No edible food found in inventory');
-        return;
       }
 
       // Ensure not moving
