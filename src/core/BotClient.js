@@ -205,7 +205,8 @@ class BotClient {
     
     // Filter plugins based on enabled features
     const filter = (plugin) => {
-      const featureName = plugin.name.toLowerCase();
+      // Convert plugin name to camelCase (e.g., WebInventory -> webInventory)
+      const featureName = plugin.name.charAt(0).toLowerCase() + plugin.name.slice(1);
       return enabledFeatures[featureName] !== false;
     };
 

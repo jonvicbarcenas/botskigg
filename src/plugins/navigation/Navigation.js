@@ -385,42 +385,42 @@ class Navigation extends IPlugin {
     
     try {
       switch (command) {
-        case 'come':
-          await this.comeToPlayer(username);
-          break;
-        case 'follow':
-          this.followPlayer(username);
-          break;
-        case 'stop':
-          this.stop();
-          break;
-        case 'goto':
-          if (args.length === 0) {
-            this.bot.chat('Usage: !goto <waypoint> or !goto <x> <y> <z>');
-            return;
-          }
-          if (args.length === 3) {
-            await this.gotoCoords(parseInt(args[0]), parseInt(args[1]), parseInt(args[2]));
-          } else {
-            await this.gotoWaypoint(args[0]);
-          }
-          break;
-        case 'waypoint':
-          if (args[0] === 'add' && args[1]) {
-            this.addWaypoint(args[1]);
-          } else if (args[0] === 'list') {
-            this.listWaypoints();
-          }
-          break;
-        case 'patrol':
-          if (args[0] === 'start') {
-            this.startPatrolCommand();
-          } else if (args[0] === 'stop') {
-            this.stopPatrolCommand();
-          } else if (args[0] === 'status') {
-            this.getPatrolStatus();
-          }
-          break;
+      case 'come':
+        await this.comeToPlayer(username);
+        break;
+      case 'follow':
+        this.followPlayer(username);
+        break;
+      case 'stop':
+        this.stop();
+        break;
+      case 'goto':
+        if (args.length === 0) {
+          this.bot.chat('Usage: !goto <waypoint> or !goto <x> <y> <z>');
+          return;
+        }
+        if (args.length === 3) {
+          await this.gotoCoords(parseInt(args[0]), parseInt(args[1]), parseInt(args[2]));
+        } else {
+          await this.gotoWaypoint(args[0]);
+        }
+        break;
+      case 'waypoint':
+        if (args[0] === 'add' && args[1]) {
+          this.addWaypoint(args[1]);
+        } else if (args[0] === 'list') {
+          this.listWaypoints();
+        }
+        break;
+      case 'patrol':
+        if (args[0] === 'start') {
+          this.startPatrolCommand();
+        } else if (args[0] === 'stop') {
+          this.stopPatrolCommand();
+        } else if (args[0] === 'status') {
+          this.getPatrolStatus();
+        }
+        break;
       }
     } catch (error) {
       logger.error('Navigation command error', error);
@@ -516,7 +516,7 @@ class Navigation extends IPlugin {
       x: Math.floor(pos.x),
       y: Math.floor(pos.y),
       z: Math.floor(pos.z),
-      description: `Added by command`
+      description: 'Added by command'
     };
     this.saveWaypoints();
     this.bot.chat(`Waypoint '${name}' saved at current location`);

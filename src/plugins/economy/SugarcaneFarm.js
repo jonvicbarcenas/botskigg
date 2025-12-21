@@ -423,7 +423,7 @@ class SugarcaneFarm extends IPlugin {
           if (this.pathfinder) {
             logger.debug(`Moving to sugarcane at ${block.position.x}, ${block.position.y}, ${block.position.z}...`);
             await this.pathfinder.goto(block.position.x, block.position.y, block.position.z, 3);
-            logger.debug(`Arrived at sugarcane`);
+            logger.debug('Arrived at sugarcane');
           } else {
             logger.warn('Pathfinder not available - trying direct movement');
             // Fallback: use bot.pathfinder directly
