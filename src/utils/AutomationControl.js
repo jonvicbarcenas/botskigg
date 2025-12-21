@@ -17,7 +17,7 @@ class AutomationControl {
    * Get all automation plugins that can be controlled
    */
   getAutomationPlugins() {
-    return ['SugarcaneFarm', 'AutoFarm'];
+    return ['SugarcaneFarm', 'AutoFarm', 'DepositSugarcane'];
   }
 
   /**

@@ -18,10 +18,13 @@ class DepositSugarcane extends IPlugin {
     this.sugarPlugin = null;
     this.checkInterval = null;
     this.isBusyDepositing = false;
+    this.isFarming = false; // Compatibility with AutomationControl
     this.threshold = config.threshold ?? 64; // default stack
     this.mcData = null;
     this.fullChests = new Set(); // Track full chests
     this.fullChestsResetInterval = null;
+    this.lastFullChestTime = 0; // Track when chests were last seen as full
+    this.cooldownDuration = 0;
   }
 
   async load() {
@@ -107,6 +110,20 @@ class DepositSugarcane extends IPlugin {
     }
   }
 
+  async startFarming() {
+    this.isFarming = true;
+    // The routine is normally handled by the 4s interval, 
+    // but we can trigger an immediate check if we want.
+    this.monitorAndDeposit().catch(err => logger.debug(`Deposit startFarming error: ${err.message}`));
+  }
+
+  stopFarming() {
+    this.isFarming = false;
+    this.isBusyDepositing = false;
+    if (this.bot.memory) this.bot.memory.isDepositing = false;
+    logger.info('DepositSugarcane routine stopped/paused');
+  }
+
   getSugarcaneCount() {
     if (!this.mcData) return 0;
     const sugarItem = this.mcData.itemsByName['sugar_cane'];
@@ -117,6 +134,13 @@ class DepositSugarcane extends IPlugin {
 
   async monitorAndDeposit(force = false) {
     if (this.isBusyDepositing) return; // prevent reentry
+
+    // Check if we are in a "all chests full" cooldown period (5-10 mins)
+    if (!force && this.lastFullChestTime > 0) {
+      if (Date.now() - this.lastFullChestTime < this.cooldownDuration) {
+        return;
+      }
+    }
 
     const count = this.getSugarcaneCount();
     if (!force && count < this.threshold) return;
@@ -130,6 +154,7 @@ class DepositSugarcane extends IPlugin {
 
     try {
       this.isBusyDepositing = true;
+      this.isFarming = true;
       // Flag global deposit mode so other systems can back off
       this.bot.memory = this.bot.memory || {};
       this.bot.memory.isDepositing = true;
@@ -152,18 +177,24 @@ class DepositSugarcane extends IPlugin {
 
       // Loop deposit until inventory goes below threshold
       let noChestAttempts = 0;
-      while (this.getSugarcaneCount() >= (this.threshold || 64)) {
+      while (this.isFarming && this.getSugarcaneCount() >= (this.threshold || 64)) {
         // Ensure we are inside the chest area before scanning (no aborting)
         await this.ensureInChestArea(chestArea.center, chestArea.radius || 5);
+        if (!this.isFarming) break;
 
         // Find a nearby chest within radius (excluding full ones)
         const chestBlock = this.findNearestChest(chestArea.center, chestArea.radius);
         if (!chestBlock) {
           noChestAttempts++;
           if (noChestAttempts >= 3) {
-            logger.warn('No available chests found after 3 attempts. All chests may be full. Clearing full chest markers and retrying...');
+            const minutes = Math.floor(Math.random() * 6) + 5; // 5 to 10 minutes
+            logger.warn(`No available chests found after 3 attempts. All chests may be full. Pausing deposit for ${minutes} minutes.`);
             this.fullChests.clear();
-            noChestAttempts = 0;
+            this.lastFullChestTime = Date.now() - (1000 * 60 * 7.5) + (1000 * 60 * minutes); // Adjust to desired random minutes
+            // Re-calculating to be more direct:
+            this.lastFullChestTime = Date.now();
+            this.cooldownDuration = 1000 * 60 * minutes;
+            break; // Exit the while loop to resume farming
           } else {
             logger.warn('No available chest found in chest area, retrying...');
           }
@@ -187,6 +218,7 @@ class DepositSugarcane extends IPlugin {
         if (countAfter < countBefore) {
           // Successfully deposited items, reset counter
           noChestAttempts = 0;
+          this.lastFullChestTime = 0; // Reset cooldown on success
           logger.debug(`Successfully deposited ${countBefore - countAfter} sugarcane`);
         }
         
@@ -201,6 +233,7 @@ class DepositSugarcane extends IPlugin {
       logger.error('Deposit routine error', err);
     } finally {
       this.isBusyDepositing = false;
+      this.isFarming = false;
       if (this.bot.memory) this.bot.memory.isDepositing = false;
       if (this.bot.stateMachine) {
         this.bot.stateMachine.setState('idle', true);
@@ -262,7 +295,7 @@ class DepositSugarcane extends IPlugin {
   async ensureInChestArea(center, radius) {
     // Keep trying until within radius + 1
     let attempts = 0;
-    while (attempts < 20) { // Safety limit instead of true
+    while (this.isFarming && attempts < 20) { // Safety limit instead of true
       const dist = this.bot.entity.position.distanceTo(new Vec3(center.x, center.y, center.z));
       if (dist <= radius + 1) return; // reached area
       attempts++;
@@ -283,6 +316,7 @@ class DepositSugarcane extends IPlugin {
           throw new Error('Navigation plugin not available');
         }
       } catch (e) {
+        if (!this.isFarming) return;
         // Fallback using pathfinder goal
         try {
           const pfMod = await import('mineflayer-pathfinder');
@@ -342,6 +376,8 @@ class DepositSugarcane extends IPlugin {
       logger.debug(`Navigation to chest failed: ${e.message}`);
     }
 
+    if (!this.isFarming) return;
+
     // Switch back to depositing
     if (wasDepositing) {
       this.bot.stateMachine.setState('depositing', true);
@@ -391,6 +427,7 @@ class DepositSugarcane extends IPlugin {
         // Copy slots list to avoid mutation issues during transfer
         const stacks = this.bot.inventory.items().filter(i => i.type === sugarItem.id);
         for (const stack of stacks) {
+          if (!this.isFarming) break;
           const countBefore = this.getSugarcaneCount();
           try {
             if (typeof container.deposit === 'function') {
@@ -421,7 +458,7 @@ class DepositSugarcane extends IPlugin {
       // Execute deposit attempts until inventory has no sugar cane or chest is full
       let safety = 0;
       let noProgressCount = 0;
-      while (this.getSugarcaneCount() > 0 && safety < 10) {
+      while (this.isFarming && this.getSugarcaneCount() > 0 && safety < 10) {
         const beforeAttempt = this.getSugarcaneCount();
         await depositAllStacks();
         await this.sleep(150);

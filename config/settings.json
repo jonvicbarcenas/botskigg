@@ -23,7 +23,7 @@
     "pathfinder": true,
     "webViewer": true,
     "autoEat": true,
-    "autoCombat": true,
+    "autoCombat": false,
     "autoFarm": false
   },
   "webViewer": {
@@ -38,5 +38,13 @@
   },
   "sugarcaneFarm": {
     "autoStart": false
+  },
+  "hostilePlayer": {
+    "autoAttack": true,
+    "useMelee": true,
+    "useLongRange": true,
+    "target": [
+      "Dainsleif"
+    ]
   }
 }

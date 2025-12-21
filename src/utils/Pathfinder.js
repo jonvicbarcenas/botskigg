@@ -12,6 +12,7 @@ class PathfinderUtil {
     this.config = config;
     this.movements = null;
     this.isInitialized = false;
+    this.currentReject = null;
   }
 
   /**
@@ -48,6 +49,11 @@ class PathfinderUtil {
    */
   async goto(x, y, z, range = 1) {
     if (!this.isInitialized) this.initialize();
+    
+    // If already moving, stop first to clear previous promise
+    if (this.currentReject) {
+      this.stop();
+    }
 
     try {
       const goal = new goals.GoalNear(x, y, z, range);
@@ -57,29 +63,38 @@ class PathfinderUtil {
       logger.debug(`Moving to coordinates: ${x}, ${y}, ${z}`);
       
       return new Promise((resolve, reject) => {
+        this.currentReject = reject;
+        
         const timeout = setTimeout(() => {
+          cleanup();
           reject(new Error('Pathfinding timeout'));
         }, 60000); // 60 second timeout
 
         const goalReached = () => {
-          clearTimeout(timeout);
-          this.bot.removeListener('path_update', pathUpdate);
+          cleanup();
           logger.success(`Reached destination: ${x}, ${y}, ${z}`);
           resolve();
         };
 
         const pathUpdate = (results) => {
           if (results.status === 'noPath') {
-            clearTimeout(timeout);
-            this.bot.removeListener('goal_reached', goalReached);
+            cleanup();
             reject(new Error('No path to destination'));
           }
+        };
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          this.bot.removeListener('goal_reached', goalReached);
+          this.bot.removeListener('path_update', pathUpdate);
+          this.currentReject = null;
         };
 
         this.bot.once('goal_reached', goalReached);
         this.bot.on('path_update', pathUpdate);
       });
     } catch (error) {
+      this.currentReject = null;
       logger.error('Failed to pathfind to location', error);
       throw error;
     }
@@ -135,6 +150,12 @@ class PathfinderUtil {
     if (!this.isInitialized) return;
 
     this.bot.pathfinder.setGoal(null);
+    
+    if (this.currentReject) {
+      this.currentReject(new Error('Pathfinding interrupted'));
+      this.currentReject = null;
+    }
+    
     logger.info('Pathfinding stopped');
   }
 
