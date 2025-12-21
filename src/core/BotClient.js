@@ -1,5 +1,5 @@
 import mineflayer from 'mineflayer';
-import pvp from 'mineflayer-pvp';
+import { plugin as pvp } from 'mineflayer-pvp';
 import { plugin as movement } from 'mineflayer-movement';
 import hawkeye from 'minecrafthawkeye';
 import logger from '../utils/Logger.js';
