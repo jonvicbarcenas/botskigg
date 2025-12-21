@@ -31,6 +31,16 @@ class CombatManager extends BaseBehaviorPlugin {
   async onLoad() {
     this.setupBehaviors();
     
+    // Configure plugins if available
+    if (this.bot.movement) {
+      this.bot.movement.setControl('pvp');
+      logger.info('Movement plugin configured for PvP');
+    }
+    
+    if (this.bot.pvp) {
+      this.bot.pvp.followDistance = 2;
+    }
+    
     // Register event handlers
     this.registerEvent('entityHurt', this.onEntityHurt);
     this.registerEvent('physicsTick', this.onPhysicsTick);
@@ -89,30 +99,12 @@ class CombatManager extends BaseBehaviorPlugin {
     if (this.currentTarget && this.currentTarget.isValid) {
       const distance = this.bot.entity.position.distanceTo(this.currentTarget.position);
       
-      // Look at target
-      this.bot.lookAt(this.currentTarget.position.offset(0, this.currentTarget.height, 0));
-
-      if (distance <= this.attackRange && this.useMelee) {
-        this.bot.attack(this.currentTarget);
-      } else if (distance > this.attackRange && distance <= 16 && this.useLongRange) {
-        // Simple long range logic (just looking for now as we don't have a projectile plugin)
-        // If we had a bow plugin like hawkeye, we'd use it here
-        const bow = this.bot.inventory.items().find(item => item.name === 'bow' || item.name === 'crossbow');
-        if (bow) {
-          this.bot.equip(bow, 'hand');
-          if (this.bot.heldItem && (this.bot.heldItem.name === 'bow' || this.bot.heldItem.name === 'crossbow')) {
-            // activateItem is used for bows/crossbows
-            this.bot.activateItem();
-            setTimeout(() => {
-              if (this.bot.heldItem && (this.bot.heldItem.name === 'bow' || this.bot.heldItem.name === 'crossbow')) {
-                this.bot.deactivateItem();
-              }
-            }, 1200); // Bow draw time
-          }
-        }
-      } else if (distance > 16) {
+      // If we are using PVP plugin, it handles its own physics tick for melee
+      // If we are using Hawkeye, it handles its own physics tick for bow
+      
+      if (distance > 16) {
         // Target too far, find new target
-        this.currentTarget = null;
+        this.stopCombat();
         this.findAndAttackTarget();
       }
     } else {
@@ -206,16 +198,33 @@ class CombatManager extends BaseBehaviorPlugin {
     this.equipBestWeapon();
     this.equipShield();
     
-    // Look at target
-    this.bot.lookAt(entity.position.offset(0, entity.height, 0));
+    const distance = this.bot.entity.position.distanceTo(entity.position);
     
-    // Attack
-    this.bot.attack(entity);
+    // Decide between melee and long range
+    if (distance > this.attackRange && this.useLongRange) {
+      const bow = this.bot.inventory.items().find(item => item.name === 'bow' || item.name === 'crossbow');
+      if (bow) {
+        this.bot.hawkEye.attack(entity);
+        return;
+      }
+    }
+    
+    if (this.useMelee) {
+      this.bot.pvp.attack(entity);
+    }
   }
 
   stopCombat() {
     this.isInCombat = false;
     this.currentTarget = null;
+    
+    if (this.bot.pvp) {
+      this.bot.pvp.stop();
+    }
+    
+    if (this.bot.hawkEye) {
+      this.bot.hawkEye.stop();
+    }
     
     if (this.combatInterval) {
       clearInterval(this.combatInterval);

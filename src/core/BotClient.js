@@ -1,4 +1,7 @@
 import mineflayer from 'mineflayer';
+import pvp from 'mineflayer-pvp';
+import { plugin as movement } from 'mineflayer-movement';
+import hawkeye from 'minecrafthawkeye';
 import logger from '../utils/Logger.js';
 import StateManager from './StateManager.js';
 import EventManager from './EventManager.js';
@@ -99,6 +102,11 @@ class BotClient {
 
     this.bot = mineflayer.createBot(botOptions);
     
+    // Load third-party plugins
+    this.bot.loadPlugin(pvp);
+    this.bot.loadPlugin(movement);
+    this.bot.loadPlugin(hawkeye);
+    
     // Attach config to bot for plugin access
     this.bot.config = this.config;
     
@@ -179,6 +187,8 @@ class BotClient {
       this.bot.once('spawn', () => {
         clearTimeout(timeout);
         
+        logger.info(`Bot spawned in world! Detected version: ${this.bot.version}`);
+
         // Auto-respawn setup
         if (this.config.behavior?.autoRespawn) {
           this.bot.on('death', () => {
