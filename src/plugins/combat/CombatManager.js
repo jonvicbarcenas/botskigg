@@ -18,6 +18,13 @@ class CombatManager extends BaseBehaviorPlugin {
     this.attackRange = 3;
     // Check both plugin-specific config and global features config
     this.autoAttack = config.autoCombat || this.bot.config?.features?.autoCombat || false;
+    
+    // Hostile player settings from config
+    this.hostilePlayers = this.bot.config?.hostilePlayer?.target || [];
+    this.autoAttackHostile = this.bot.config?.hostilePlayer?.autoAttack || false;
+    this.useMelee = this.bot.config?.hostilePlayer?.useMelee !== false;
+    this.useLongRange = this.bot.config?.hostilePlayer?.useLongRange || false;
+    
     this.combatInterval = null;
   }
 
@@ -48,11 +55,11 @@ class CombatManager extends BaseBehaviorPlugin {
     
     // Create transitions
     this.createTransition('idle', 'fighting', 
-      () => this.autoAttack && this.findNearestHostile() !== null
+      () => (this.autoAttack || this.autoAttackHostile) && this.findNearestHostile() !== null
     );
     
     this.createTransition('fighting', 'idle', 
-      () => !this.autoAttack || this.currentTarget === null || !this.currentTarget.isValid
+      () => (!this.autoAttack && !this.autoAttackHostile) || this.currentTarget === null || !this.currentTarget.isValid
     );
     
     logger.info('Combat behaviors and transitions registered');
@@ -67,7 +74,7 @@ class CombatManager extends BaseBehaviorPlugin {
 
   onEntityHurt(entity) {
     // Check if bot was hurt
-    if (entity === this.bot.entity && this.autoAttack) {
+    if (entity === this.bot.entity && (this.autoAttack || this.autoAttackHostile)) {
       const attacker = this.findNearestHostile();
       if (attacker) {
         this.attackEntity(attacker);
@@ -76,15 +83,34 @@ class CombatManager extends BaseBehaviorPlugin {
   }
 
   onPhysicsTick() {
-    if (!this.autoAttack || !this.isInCombat) return;
+    if ((!this.autoAttack && !this.autoAttackHostile) || !this.isInCombat) return;
 
     // Continue attacking current target
     if (this.currentTarget && this.currentTarget.isValid) {
       const distance = this.bot.entity.position.distanceTo(this.currentTarget.position);
       
-      if (distance <= this.attackRange) {
+      // Look at target
+      this.bot.lookAt(this.currentTarget.position.offset(0, this.currentTarget.height, 0));
+
+      if (distance <= this.attackRange && this.useMelee) {
         this.bot.attack(this.currentTarget);
-      } else if (distance > 10) {
+      } else if (distance > this.attackRange && distance <= 16 && this.useLongRange) {
+        // Simple long range logic (just looking for now as we don't have a projectile plugin)
+        // If we had a bow plugin like hawkeye, we'd use it here
+        const bow = this.bot.inventory.items().find(item => item.name === 'bow' || item.name === 'crossbow');
+        if (bow) {
+          this.bot.equip(bow, 'hand');
+          if (this.bot.heldItem && (this.bot.heldItem.name === 'bow' || this.bot.heldItem.name === 'crossbow')) {
+            // activateItem is used for bows/crossbows
+            this.bot.activateItem();
+            setTimeout(() => {
+              if (this.bot.heldItem && (this.bot.heldItem.name === 'bow' || this.bot.heldItem.name === 'crossbow')) {
+                this.bot.deactivateItem();
+              }
+            }, 1200); // Bow draw time
+          }
+        }
+      } else if (distance > 16) {
         // Target too far, find new target
         this.currentTarget = null;
         this.findAndAttackTarget();
@@ -101,24 +127,47 @@ class CombatManager extends BaseBehaviorPlugin {
       this.autoAttack = true;
       this.bot.chat('Auto-attack enabled');
       this.findAndAttackTarget();
+    } else if (message === '!attack player hostile' || message === '!attackHostile') {
+      this.autoAttack = true; // Enable general combat loop
+      this.autoAttackHostile = true;
+      this.bot.chat('Attacking hostile players enabled');
+      this.findAndAttackTarget();
     } else if (message === '!defend') {
       this.autoAttack = false;
+      this.autoAttackHostile = false;
       this.stopCombat();
       this.bot.chat('Auto-attack disabled');
     } else if (message === '!combat') {
       const status = this.getStatus();
-      this.bot.chat(`Combat: ${status.isInCombat ? 'Active' : 'Inactive'}, Auto: ${status.autoAttack ? 'On' : 'Off'}`);
+      this.bot.chat(`Combat: ${status.isInCombat ? 'Active' : 'Inactive'}, Auto: ${status.autoAttack ? 'On' : 'Off'}, Hostile: ${status.autoAttackHostile ? 'On' : 'Off'}`);
     }
   }
 
   findNearestHostile() {
     const entities = Object.values(this.bot.entities);
-    const hostiles = filterTargets(entities, {
-      hostile: true,
-      maxDistance: 16,
-      position: this.bot.entity.position,
-      hostileMobs: this.hostileMobs
-    });
+    const hostiles = [];
+    
+    // Get hostile mobs if autoAttack is enabled
+    if (this.autoAttack) {
+      const mobs = filterTargets(entities, {
+        hostile: true,
+        maxDistance: 16,
+        position: this.bot.entity.position,
+        hostileMobs: this.hostileMobs
+      });
+      hostiles.push(...mobs);
+    }
+
+    // Get hostile players if configured
+    if (this.autoAttackHostile && this.hostilePlayers.length > 0) {
+      const hostilePlayers = filterTargets(entities, {
+        players: true,
+        maxDistance: 16,
+        position: this.bot.entity.position,
+        includeNames: this.hostilePlayers
+      });
+      hostiles.push(...hostilePlayers);
+    }
 
     if (hostiles.length === 0) return null;
 
@@ -131,7 +180,7 @@ class CombatManager extends BaseBehaviorPlugin {
   }
 
   findAndAttackTarget() {
-    if (!this.autoAttack) return;
+    if (!this.autoAttack && !this.autoAttackHostile) return;
 
     const target = this.findNearestHostile();
     if (target) {
@@ -151,7 +200,11 @@ class CombatManager extends BaseBehaviorPlugin {
       this.stateMachine.setState('fighting');
     }
     
-    logger.info(`Attacking ${entity.name || entity.displayName || 'entity'}`);
+    logger.info(`Attacking ${entity.name || entity.displayName || entity.username || 'entity'}`);
+    
+    // Equip weapon
+    this.equipBestWeapon();
+    this.equipShield();
     
     // Look at target
     this.bot.lookAt(entity.position.offset(0, entity.height, 0));
@@ -231,7 +284,8 @@ class CombatManager extends BaseBehaviorPlugin {
       ...super.getStatus(),
       isInCombat: this.isInCombat,
       autoAttack: this.autoAttack,
-      currentTarget: this.currentTarget ? this.currentTarget.name : null,
+      autoAttackHostile: this.autoAttackHostile,
+      currentTarget: this.currentTarget ? (this.currentTarget.name || this.currentTarget.username) : null,
       health: this.bot.health,
       food: this.bot.food
     };
