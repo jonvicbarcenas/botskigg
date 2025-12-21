@@ -1,4 +1,4 @@
-import BaseBehaviorPlugin from '../base/BaseBehaviorPlugin.js';
+import BaseBehaviorPlugin from '../base/_BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
 import { filterTargets } from '../../utils/targets.js';
 
