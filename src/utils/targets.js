@@ -29,13 +29,15 @@ export function filterTargets(entities, options = {}) {
     }
 
     // Exclude specific names
-    if (excludeNames.length > 0 && excludeNames.includes(entity.name)) {
+    const entityName = entity.type === 'player' ? entity.username : entity.name;
+
+    if (excludeNames.length > 0 && excludeNames.includes(entityName)) {
       return false;
     }
 
     // Include specific names (overrides other filters)
     if (includeNames.length > 0) {
-      return includeNames.includes(entity.name);
+      return includeNames.includes(entityName);
     }
 
     // Filter by type

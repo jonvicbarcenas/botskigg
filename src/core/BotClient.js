@@ -1,4 +1,13 @@
 import mineflayer from 'mineflayer';
+import { plugin as pvp } from 'mineflayer-pvp';
+import { plugin as movement } from 'mineflayer-movement';
+import hawkeye from 'minecrafthawkeye';
+import armorManagerPkg from 'mineflayer-armor-manager';
+import toolPluginPkg from 'mineflayer-tool';
+import bloodhoundPkg from 'mineflayer-bloodhound';
+const armorManager = armorManagerPkg.default || armorManagerPkg;
+const toolPlugin = toolPluginPkg.plugin || toolPluginPkg.default || toolPluginPkg;
+const bloodhound = bloodhoundPkg.default || bloodhoundPkg;
 import logger from '../utils/Logger.js';
 import StateManager from './StateManager.js';
 import EventManager from './EventManager.js';
@@ -49,28 +58,28 @@ class BotClient {
 
     try {
       logger.info('Starting bot...');
-      
+
       // Create bot instance
       this.createBot();
-      
+
       // Initialize managers
       this.eventManager = new EventManager(this.bot, this.stateManager);
       this.eventManager.initialize();
-      
+
       // Initialize plugin loader
       this.pluginLoader = new PluginLoader(this.bot);
-      
+
       // Wait for spawn
       await this.waitForSpawn();
-      
+
       // Load plugins
       if (this.config.features) {
         await this.loadPlugins();
       }
-      
+
       this.isRunning = true;
       this.reconnectAttempts = 0;
-      
+
       logger.success('Bot started successfully');
     } catch (error) {
       logger.error('Failed to start bot', error);
@@ -98,13 +107,27 @@ class BotClient {
     }
 
     this.bot = mineflayer.createBot(botOptions);
-    
+
+    // Load third-party plugins
+    this.bot.loadPlugin(pvp);
+    this.bot.loadPlugin(movement);
+    this.bot.loadPlugin(hawkeye.default || hawkeye);
+    this.bot.loadPlugin(armorManager);
+    this.bot.loadPlugin(toolPlugin);
+
+    if (typeof bloodhound === 'function') {
+      this.bot.loadPlugin(bloodhound);
+      logger.info('✓ Bloodhound plugin loaded');
+    } else {
+      logger.error('Failed to load Bloodhound: plugin is not a function', bloodhound);
+    }
+
     // Attach config to bot for plugin access
     this.bot.config = this.config;
-    
+
     // Setup auto-reconnect
     this.setupAutoReconnect();
-    
+
     logger.info(`Bot connecting to ${botOptions.host}:${botOptions.port}...`);
   }
 
@@ -116,7 +139,7 @@ class BotClient {
 
     this.bot.on('end', (reason) => {
       if (!this.isRunning) return;
-      
+
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         logger.error('Max reconnect attempts reached. Stopping bot.');
         this.isRunning = false;
@@ -125,9 +148,9 @@ class BotClient {
 
       const delay = this.config.behavior.reconnectDelay || 5000;
       this.reconnectAttempts++;
-      
+
       logger.warn(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-      
+
       setTimeout(() => {
         this.reconnect();
       }, delay);
@@ -140,27 +163,27 @@ class BotClient {
   async reconnect() {
     try {
       logger.info('Attempting to reconnect...');
-      
+
       // Clean up old bot
       if (this.bot) {
         this.bot.removeAllListeners();
       }
-      
+
       // Create new bot
       this.createBot();
-      
+
       // Reinitialize managers
       this.eventManager = new EventManager(this.bot, this.stateManager);
       this.eventManager.initialize();
-      
+
       this.pluginLoader = new PluginLoader(this.bot);
-      
+
       // Wait for spawn
       await this.waitForSpawn();
-      
+
       // Reload plugins
       await this.loadPlugins();
-      
+
       logger.success('Reconnected successfully');
     } catch (error) {
       logger.error('Failed to reconnect', error);
@@ -178,7 +201,9 @@ class BotClient {
 
       this.bot.once('spawn', () => {
         clearTimeout(timeout);
-        
+
+        logger.info(`Bot spawned in world! Detected version: ${this.bot.version}`);
+
         // Auto-respawn setup
         if (this.config.behavior?.autoRespawn) {
           this.bot.on('death', () => {
@@ -186,7 +211,7 @@ class BotClient {
             setTimeout(() => this.bot.respawn(), 1000);
           });
         }
-        
+
         resolve();
       });
 
@@ -202,7 +227,7 @@ class BotClient {
    */
   async loadPlugins() {
     const enabledFeatures = this.config.features;
-    
+
     // Filter plugins based on enabled features
     const filter = (plugin) => {
       // Convert plugin name to camelCase (e.g., WebInventory -> webInventory)
@@ -224,24 +249,24 @@ class BotClient {
 
     try {
       logger.info('Stopping bot...');
-      
+
       this.isRunning = false;
-      
+
       // Unload all plugins
       if (this.pluginLoader) {
         await this.pluginLoader.unloadAll();
       }
-      
+
       // Clean up event manager
       if (this.eventManager) {
         this.eventManager.cleanup();
       }
-      
+
       // Disconnect bot
       if (this.bot) {
         this.bot.quit();
       }
-      
+
       logger.success('Bot stopped successfully');
     } catch (error) {
       logger.error('Error stopping bot', error);
@@ -254,15 +279,17 @@ class BotClient {
    */
   getStatus() {
     return {
-      isRunning: this.isRunning,
-      username: this.bot?.username,
-      health: this.bot?.health,
-      food: this.bot?.food,
-      position: this.bot?.entity?.position,
-      gameMode: this.bot?.game?.gameMode,
-      states: this.stateManager.getAllStates(),
-      plugins: this.pluginLoader?.getStats(),
-      events: this.eventManager?.getStats()
+      ...this.bot?.entity ? {
+        isRunning: this.isRunning,
+        username: this.bot?.username,
+        health: this.bot?.health,
+        food: this.bot?.food,
+        position: this.bot?.entity?.position,
+        gameMode: this.bot?.game?.gameMode,
+        states: this.stateManager.getAllStates(),
+        plugins: this.pluginLoader?.getStats(),
+        events: this.eventManager?.getStats()
+      } : { isRunning: this.isRunning }
     };
   }
 

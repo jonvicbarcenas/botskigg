@@ -26,6 +26,13 @@ class WebViewer extends IPlugin {
       try {
         const { mineflayer: mineflayerViewer } = await import('prismarine-viewer');
         
+        // Ensure bot version is known - prismarine-viewer needs this
+        if (!this.bot.version) {
+          this.bot.version = this.bot.config?.server?.version || '1.20.1';
+        }
+        
+        logger.info(`Initializing WebViewer for Minecraft version: ${this.bot.version}`);
+
         // Start web viewer
         this.viewer = mineflayerViewer(this.bot, {
           port: this.port,

@@ -1,7 +1,13 @@
-import BaseBehaviorPlugin from '../base/BaseBehaviorPlugin.js';
+import BaseBehaviorPlugin from '../base/_BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
 import minecraftData from 'minecraft-data';
 import { plugin as collectBlock } from 'mineflayer-collectblock';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * SugarcaneFarm Plugin - Handles automated sugarcane farming
@@ -20,6 +26,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
   }
 
   async onLoad() {
+    logger.debug(`SugarcaneFarm onLoad: this.name=${this.name}, type of loadFarmArea=${typeof this.loadFarmArea}`);
     // Load mineflayer-collectblock plugin
     if (!this.bot.collectBlock) {
       this.bot.loadPlugin(collectBlock);
@@ -81,6 +88,31 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
     this.createTransition('farming_sugarcane', 'idle', () => !this.isFarming);
     
     logger.info('Sugarcane farming behaviors and transitions registered');
+  }
+
+  /**
+   * Load farm area from waypoints.json
+   */
+  loadFarmArea() {
+    try {
+      const waypointsPath = path.join(__dirname, '../../../data/waypoints.json');
+      if (!fs.existsSync(waypointsPath)) {
+        logger.warn('waypoints.json not found');
+        return;
+      }
+      
+      const data = JSON.parse(fs.readFileSync(waypointsPath, 'utf8'));
+      const farmArea = data.areas?.sugarcane_farm;
+      
+      if (farmArea && farmArea.corner1 && farmArea.corner2) {
+        this.farmArea = farmArea;
+        logger.info('Sugarcane farm area loaded from waypoints.json');
+      } else {
+        logger.warn('Sugarcane farm area not defined in waypoints.json');
+      }
+    } catch (error) {
+      logger.error('Failed to load farm area', error);
+    }
   }
 
   async unload() {

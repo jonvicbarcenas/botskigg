@@ -1,22 +1,4 @@
 {
-  "movement": {
-    "gravity": 0.08,
-    "airdrag": 0.98,
-    "yawSpeed": 3.0,
-    "sprintSpeed": 1.3,
-    "sneakSpeed": 0.3,
-    "stepHeight": 0.6,
-    "negligeableVelocity": 0.003,
-    "soulsandSpeed": 0.4,
-    "honeyblockSpeed": 0.4,
-    "honeyblockJumpSpeed": 0.4,
-    "ladderMaxSpeed": 0.15,
-    "ladderClimbSpeed": 0.2,
-    "playerApothem": 0.3,
-    "playerHeight": 1.8,
-    "jumpHeight": 1.25,
-    "playerHalfWidth": 0.3
-  },
   "pathfinder": {
     "tickTimeout": 40,
     "searchRadius": 64,

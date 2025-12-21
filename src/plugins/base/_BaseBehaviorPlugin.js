@@ -29,6 +29,12 @@ class BaseBehaviorPlugin extends IPlugin {
     // To be implemented by subclasses
   }
 
+  async unload() {
+    this.unregisterAllEvents();
+    this.isLoaded = false;
+    logger.info(`${this.name} plugin unloaded`);
+  }
+
   registerBehavior(name, behaviorClass = BehaviorIdle, onEnter = null, onExit = null) {
     if (!this.stateMachine) return;
 

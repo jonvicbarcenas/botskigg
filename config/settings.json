@@ -23,8 +23,10 @@
     "pathfinder": true,
     "webViewer": true,
     "autoEat": true,
-    "autoCombat": true,
-    "autoFarm": false
+    "autoCombat": false,
+    "autoFarm": false,
+    "armorManager": true,
+    "toolManager": true
   },
   "webViewer": {
     "port": 3000,
@@ -38,5 +40,16 @@
   },
   "sugarcaneFarm": {
     "autoStart": false
+  },
+  "hostilePlayer": {
+    "autoAttack": true,
+    "useMelee": true,
+    "useLongRange": true,
+    "target": [
+      "Dainsleifz"
+    ]
+  },
+  "combat": {
+    "autoRetaliate": true
   }
 }
