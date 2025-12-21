@@ -33,8 +33,7 @@ class CombatManager extends BaseBehaviorPlugin {
     
     // Configure plugins if available
     if (this.bot.movement) {
-      this.bot.movement.setControl('pvp');
-      logger.info('Movement plugin configured for PvP');
+      logger.info('Movement plugin detected');
     }
     
     if (this.bot.pvp) {
