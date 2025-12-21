@@ -22,7 +22,6 @@ function loadConfig() {
   try {
     const settings = JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8'));
     const physics = JSON.parse(fs.readFileSync(path.join(configDir, 'physics.json'), 'utf8'));
-    const permissions = JSON.parse(fs.readFileSync(path.join(configDir, 'permissions.json'), 'utf8'));
     
     // Override with environment variables if present
     if (process.env.MC_HOST) settings.server.host = process.env.MC_HOST;
@@ -42,8 +41,7 @@ function loadConfig() {
     
     return {
       settings,
-      physics,
-      permissions
+      physics
     };
   } catch (error) {
     logger.error('Failed to load configuration files', error);
@@ -72,8 +70,7 @@ async function main() {
     // Merge all configs
     const fullConfig = {
       ...config.settings,
-      physics: config.physics,
-      permissions: config.permissions
+      physics: config.physics
     };
     
     // Create and start bot
