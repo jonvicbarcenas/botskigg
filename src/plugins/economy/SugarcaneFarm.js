@@ -1,13 +1,7 @@
 import BaseBehaviorPlugin from '../base/BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
 import minecraftData from 'minecraft-data';
 import { plugin as collectBlock } from 'mineflayer-collectblock';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /**
  * SugarcaneFarm Plugin - Handles automated sugarcane farming
