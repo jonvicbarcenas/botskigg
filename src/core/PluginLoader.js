@@ -218,20 +218,11 @@ class PluginLoader {
 
   /**
    * Reload a plugin
+   * @deprecated Hot reload is not supported in ES Modules without full restart
    */
   async reloadPlugin(pluginName) {
-    if (!this.plugins.has(pluginName)) {
-      throw new Error(`Plugin ${pluginName} is not loaded`);
-    }
-
-    const pluginData = this.plugins.get(pluginName);
-    await this.unloadPlugin(pluginName);
-    
-    // Clear module cache to force reimport
-    delete require.cache[pluginData.info.path];
-    
-    await this.loadPlugin(pluginData.info);
-    logger.success(`Reloaded plugin: ${pluginName}`);
+    logger.warn('Hot reload is not supported in ES Modules. Please restart the bot.');
+    return false;
   }
 
   /**
