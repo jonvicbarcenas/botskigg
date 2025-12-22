@@ -1,5 +1,8 @@
 import BaseBehaviorPlugin from '../base/_BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
+import ChatParser from '../../utils/ChatParser.js';
+import { Vec3 } from 'vec3';
+import { plugin as collectBlock } from 'mineflayer-collectblock';
 
 /**
  * AutoFarm Plugin - Handles automated farming
@@ -31,6 +34,11 @@ class AutoFarm extends BaseBehaviorPlugin {
   }
 
   async onLoad() {
+    // Load collectBlock plugin
+    if (!this.bot.collectBlock) {
+      this.bot.loadPlugin(collectBlock);
+    }
+    
     // Get pluginLoader reference from BotClient
     const BotClient = (await import('../../core/BotClient.js')).default;
     const botClient = BotClient.getInstance();
@@ -46,7 +54,7 @@ class AutoFarm extends BaseBehaviorPlugin {
     this.setupBehaviors();
     
     // Register chat commands
-    this.registerEvent('chat', this.handleChat);
+    this.registerEvent('chat', this.handleChat.bind(this));
   }
 
   /**
@@ -80,8 +88,15 @@ class AutoFarm extends BaseBehaviorPlugin {
    */
   startAutonomousFarming() {
     this.farmInterval = setInterval(async () => {
-      if (this.isFarming && this.getState() === 'farming') {
+      // Check both the local flag and the state machine
+      const currentState = this.getState();
+      if (this.isFarming && (currentState === 'farming' || currentState === 'idle')) {
         try {
+          // If we're in idle but isFarming is true, it means we probably got 
+          // kicked back to idle by a navigation event. Re-assert farming state.
+          if (currentState === 'idle') {
+            this.setState('farming');
+          }
           await this.performAutonomousFarmCycle();
         } catch (error) {
           logger.error('Error in autonomous farming cycle:', error);
@@ -106,24 +121,43 @@ class AutoFarm extends BaseBehaviorPlugin {
   async performAutonomousFarmCycle() {
     // Find mature crops nearby
     const matureCrops = this.findMatureCrops(16);
+    // Find empty farmland nearby
+    const emptyFarmland = this.findEmptyFarmland(16);
     
-    if (matureCrops.length > 0) {
-      logger.info(`Found ${matureCrops.length} mature crops, harvesting...`);
+    if (matureCrops.length > 0 || emptyFarmland.length > 0) {
+      logger.info(`Farming cycle: Found ${matureCrops.length} mature crops and ${emptyFarmland.length} empty farmlands`);
       
-      for (const crop of matureCrops.slice(0, 3)) { // Limit to 3 crops per cycle
+      // Handle mature crops first
+      for (const crop of matureCrops.slice(0, 5)) {
         try {
-          await this.harvestCrop(crop);
-          await this.replantCrop(crop);
-          await this.sleep(500); // Small delay between crops
+          const cropName = await this.harvestCrop(crop);
+          if (cropName) {
+            await this.replantCrop(crop.position, cropName);
+          }
+          await this.sleep(500);
         } catch (error) {
           logger.error('Error harvesting crop:', error);
+        }
+      }
+
+      // Handle empty farmland
+      for (const farmland of emptyFarmland.slice(0, 5)) {
+        try {
+          // Check if it's still empty
+          const blockAbove = this.bot.blockAt(farmland.position.offset(0, 1, 0));
+          if (blockAbove && (blockAbove.name === 'air' || blockAbove.name === 'void_air' || blockAbove.name === 'cave_air')) {
+            await this.replantCrop(farmland.position.offset(0, 1, 0));
+            await this.sleep(500);
+          }
+        } catch (error) {
+          logger.error('Error planting on empty farmland:', error);
         }
       }
       
       this.stats.cyclesCompleted++;
       logger.success(`Farming cycle completed. Total cycles: ${this.stats.cyclesCompleted}`);
     } else {
-      logger.debug('No mature crops found, waiting for growth...');
+      logger.debug('No mature crops or empty farmland found, waiting for growth...');
     }
   }
 
@@ -137,15 +171,27 @@ class AutoFarm extends BaseBehaviorPlugin {
   async handleChat(username, message) {
     if (username === this.bot.username) return;
     
-    if (message === '!farm start') {
+    const parsed = ChatParser.parseCommand(message, this.bot.config.behavior?.chatCommandPrefix || '!');
+    if (!parsed || parsed.command !== 'farm') return;
+
+    logger.debug(`AutoFarm received command: ${parsed.command} ${parsed.args.join(' ')} from ${username}`);
+    
+    const subCommand = parsed.args[0];
+
+    if (subCommand === 'start') {
       await this.startFarming();
       this.bot.chat('Auto-farming started');
-    } else if (message === '!farm stop') {
+    } else if (subCommand === 'stop') {
       this.stopFarming();
       this.bot.chat('Auto-farming stopped');
-    } else if (message === '!farm status') {
+    } else if (subCommand === 'status') {
       const status = this.getStatus();
       this.bot.chat(`Farming: ${status.isFarming ? 'Active' : 'Inactive'}, Harvested: ${status.harvestCount}, Planted: ${status.plantCount}`);
+    } else if (subCommand === 'scan') {
+      // Debug command to scan for crops
+      const crops = this.findMatureCrops(16);
+      const empty = this.findEmptyFarmland(16);
+      this.bot.chat(`Found ${crops.length} mature crops and ${empty.length} empty farmland nearby`);
     }
   }
 
@@ -162,7 +208,12 @@ class AutoFarm extends BaseBehaviorPlugin {
     // Set state to farming
     this.setState('farming');
 
-    logger.info('Starting auto-farm...');
+    // Disable sprinting for careful farming
+    if (this.pathfinder) {
+      this.pathfinder.setConfig({ allowSprinting: false });
+    }
+
+    logger.info('Starting auto-farm (sprinting disabled)...');
     
     // Logic is handled by onStateEntered
   }
@@ -172,8 +223,14 @@ class AutoFarm extends BaseBehaviorPlugin {
     
     // Return to idle state
     this.setState('idle');
+
+    // Re-enable sprinting based on config
+    if (this.pathfinder) {
+      const defaultSprint = this.bot.config?.physics?.pathfinder?.allowSprinting !== false;
+      this.pathfinder.setConfig({ allowSprinting: defaultSprint });
+    }
     
-    logger.info('Auto-farming stopped');
+    logger.info('Auto-farming stopped (sprinting restored)');
     
     // Logic is handled by onStateExited
   }
@@ -182,14 +239,20 @@ class AutoFarm extends BaseBehaviorPlugin {
     try {
       // Find mature crops nearby
       const matureCrops = this.findMatureCrops(16);
+      const emptyFarmland = this.findEmptyFarmland(16);
       
-      if (matureCrops.length > 0) {
-        logger.info(`Found ${matureCrops.length} mature crops`);
+      if (matureCrops.length > 0 || emptyFarmland.length > 0) {
+        logger.info(`Manual farm cycle: ${matureCrops.length} mature, ${emptyFarmland.length} empty`);
         
-        for (const crop of matureCrops.slice(0, 5)) { // Process 5 at a time
-          await this.harvestCrop(crop);
-          await this.replantCrop(crop);
-          await this.sleep(500); // Small delay between actions
+        for (const crop of matureCrops.slice(0, 5)) {
+          const name = await this.harvestCrop(crop);
+          if (name) await this.replantCrop(crop.position, name);
+          await this.sleep(500);
+        }
+
+        for (const farmland of emptyFarmland.slice(0, 5)) {
+          await this.replantCrop(farmland.position.offset(0, 1, 0));
+          await this.sleep(500);
         }
       }
     } catch (error) {
@@ -201,20 +264,29 @@ class AutoFarm extends BaseBehaviorPlugin {
     const crops = [];
     const pos = this.bot.entity.position;
 
-    // Search for crop blocks in range
-    for (let x = -range; x <= range; x++) {
-      for (let y = -2; y <= 2; y++) {
-        for (let z = -range; z <= range; z++) {
-          const blockPos = pos.offset(x, y, z);
-          const block = this.bot.blockAt(blockPos);
-          
-          if (block && this.isMatureCrop(block)) {
-            crops.push(block);
-          }
+    // Use findBlocks for more reliable detection
+    for (const cropType of this.cropTypes) {
+      const blockType = this.bot.registry.blocksByName[cropType];
+      if (!blockType) {
+        logger.debug(`Block type ${cropType} not found in registry`);
+        continue;
+      }
+
+      const foundBlocks = this.bot.findBlocks({
+        matching: blockType.id,
+        maxDistance: range,
+        count: 100
+      });
+
+      for (const blockPos of foundBlocks) {
+        const block = this.bot.blockAt(blockPos);
+        if (block && this.isMatureCrop(block)) {
+          crops.push(block);
         }
       }
     }
 
+    logger.debug(`Found ${crops.length} mature crops within ${range} blocks`);
     return crops;
   }
 
@@ -224,7 +296,9 @@ class AutoFarm extends BaseBehaviorPlugin {
     for (const cropType of this.cropTypes) {
       if (block.name === cropType) {
         const maxAge = this.matureCrops[cropType];
-        const age = block.metadata || 0;
+        // Use getProperties() to get block state (modern mineflayer)
+        const properties = block.getProperties ? block.getProperties() : {};
+        const age = properties.age !== undefined ? properties.age : (block._properties?.age ?? 0);
         return age >= maxAge;
       }
     }
@@ -232,53 +306,141 @@ class AutoFarm extends BaseBehaviorPlugin {
     return false;
   }
 
+  findEmptyFarmland(range = 16) {
+    const farmlandBlock = this.bot.registry.blocksByName['farmland'];
+    if (!farmlandBlock) return [];
+
+    const foundBlocks = this.bot.findBlocks({
+      matching: farmlandBlock.id,
+      maxDistance: range,
+      count: 100
+    });
+
+    const empty = [];
+    for (const blockPos of foundBlocks) {
+      const blockAbove = this.bot.blockAt(blockPos.offset(0, 1, 0));
+      if (blockAbove && (blockAbove.name === 'air' || blockAbove.name === 'void_air' || blockAbove.name === 'cave_air')) {
+        empty.push(this.bot.blockAt(blockPos));
+      }
+    }
+
+    logger.debug(`Found ${empty.length} empty farmland blocks within ${range} blocks`);
+    return empty;
+  }
+
+  async collectDroppedItems(range = 5) {
+    const items = Object.values(this.bot.entities).filter(e => 
+      e.type === 'item' && 
+      this.bot.entity.position.distanceTo(e.position) < range
+    );
+    
+    if (items.length === 0) return;
+
+    logger.debug(`Collecting ${items.length} dropped items nearby`);
+    for (const item of items) {
+      try {
+        if (this.bot.collectBlock) {
+          await this.bot.collectBlock.collect(item, { ignoreNoPath: true });
+        } else if (this.pathfinder) {
+          await this.pathfinder.goto(item.position.x, item.position.y, item.position.z, 0);
+          await this.sleep(200);
+        }
+      } catch (error) {
+        logger.debug(`Failed to collect item: ${error.message}`);
+      }
+    }
+  }
+
   async harvestCrop(block) {
     try {
-      // Move to crop
-      const distance = this.bot.entity.position.distanceTo(block.position);
-      if (distance > 4) {
+      // Store crop name and position before harvesting
+      const cropName = block.name;
+      const cropPos = block.position.clone();
+      
+      // Move closer for better item pickup
+      const distance = this.bot.entity.position.distanceTo(cropPos);
+      if (distance > 2) {
         if (this.pathfinder) {
-          await this.pathfinder.goto(block.position.x, block.position.y, block.position.z, 3);
+          await this.pathfinder.goto(cropPos.x, cropPos.y, cropPos.z, 1.5);
         } else {
           logger.warn('Pathfinder not available, skipping movement');
         }
       }
 
       // Look at crop
-      await this.bot.lookAt(block.position);
+      await this.bot.lookAt(cropPos);
 
       // Break crop
       await this.bot.dig(block);
       
+      // Wait for items to be picked up
+      await this.collectDroppedItems(3);
+      
       this.harvestCount++;
-      logger.debug(`Harvested ${block.name}`);
+      logger.debug(`Harvested ${cropName}`);
+      
+      return cropName;
     } catch (error) {
       logger.error(`Failed to harvest crop at ${block.position}`, error);
+      return null;
     }
   }
 
-  async replantCrop(block) {
+  async replantCrop(position, cropName) {
     try {
-      // Find seeds in inventory
-      const seeds = this.findSeeds(block.name);
+      // If position is a block, get its position
+      const targetPos = position.position ? position.position.clone() : position.clone();
+      
+      // If cropName is not provided, try to find any available seeds
+      let seeds = null;
+      if (cropName) {
+        seeds = this.findSeeds(cropName);
+      }
       
       if (!seeds) {
-        logger.warn(`No seeds for ${block.name}`);
+        // Fallback: search for any seeds in inventory
+        const seedMap = {
+          'wheat': 'wheat_seeds',
+          'carrots': 'carrot',
+          'potatoes': 'potato',
+          'beetroots': 'beetroot_seeds',
+          'nether_wart': 'nether_wart'
+        };
+        for (const type of Object.keys(seedMap)) {
+          seeds = this.findSeeds(type);
+          if (seeds) {
+            cropName = type;
+            break;
+          }
+        }
+      }
+
+      if (!seeds) {
+        logger.debug('No seeds available for planting');
         return;
+      }
+
+      // Move to position if needed
+      const distance = this.bot.entity.position.distanceTo(targetPos);
+      if (distance > 4) {
+        if (this.pathfinder) {
+          await this.pathfinder.goto(targetPos.x, targetPos.y, targetPos.z, 2);
+        }
       }
 
       // Equip seeds
       await this.bot.equip(seeds, 'hand');
 
       // Place seeds
-      const blockBelow = this.bot.blockAt(block.position.offset(0, -1, 0));
+      const blockBelow = this.bot.blockAt(targetPos.offset(0, -1, 0));
       if (blockBelow && blockBelow.name === 'farmland') {
-        await this.bot.placeBlock(blockBelow, new this.bot.vec3(0, 1, 0));
+        await this.bot.lookAt(blockBelow.position);
+        await this.bot.placeBlock(blockBelow, new Vec3(0, 1, 0));
         this.plantCount++;
-        logger.debug(`Replanted ${block.name}`);
+        logger.debug(`Planted ${cropName} at ${targetPos}`);
       }
     } catch (error) {
-      logger.error(`Failed to replant at ${block.position}`, error);
+      logger.error(`Failed to replant at ${position}`, error);
     }
   }
 
