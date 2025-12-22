@@ -150,6 +150,10 @@ class EventManager {
     // Position: chat = 0, system = 1, game_info = 2
     if (position === 1) {
       logger.bot(`[SYSTEM] ${text}`);
+    } else if (position === 0) {
+      logger.debug(`[CHAT_RAW] ${text}`);
+    } else if (position === 2) {
+      logger.debug(`[GAME_INFO] ${text}`);
     }
   }
 
