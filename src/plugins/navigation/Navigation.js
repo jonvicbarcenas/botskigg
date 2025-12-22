@@ -58,8 +58,8 @@ class Navigation extends IPlugin {
         logger.success('Navigation goal reached');
         this.currentTarget = null;
         
-        // Return to idle if not following
-        if (this.stateMachine && !this.isFollowing) {
+        // Return to idle ONLY if we were in the moving state
+        if (this.stateMachine && this.stateMachine.getState() === 'moving') {
           this.stateMachine.setState('idle');
         }
       });
@@ -378,13 +378,20 @@ class Navigation extends IPlugin {
   async handleChat(username, message) {
     if (username === this.bot.username) return;
     
-    const parsed = ChatParser.parseCommand(message, '!');
+    logger.debug(`Navigation received chat from ${username}: ${message}`);
+    
+    const parsed = ChatParser.parseCommand(message, this.bot.config.behavior?.chatCommandPrefix || '!');
     if (!parsed) return;
+    
+    logger.debug(`Navigation parsed command: ${parsed.command}`);
     
     const { command, args } = parsed;
     
     try {
       switch (command) {
+      case 'ping':
+        this.bot.chat('Pong!');
+        break;
       case 'come':
         await this.comeToPlayer(username);
         break;

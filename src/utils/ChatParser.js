@@ -31,11 +31,26 @@ class ChatParser {
   static parseCommand(message, prefix = '!') {
     const cleaned = this.stripColors(message).trim();
     
-    if (!cleaned.startsWith(prefix)) {
+    // Find where the prefix starts
+    let startIndex = cleaned.indexOf(prefix);
+    
+    // If prefix not found, return null
+    if (startIndex === -1) {
       return null;
     }
 
-    const withoutPrefix = cleaned.slice(prefix.length);
+    // Check if prefix is at the start or preceded by a space/colon (common in some chat formats)
+    // This allows matching "User: !command" or "[Global] User: !command"
+    if (startIndex > 0) {
+      const charBefore = cleaned[startIndex - 1];
+      if (charBefore !== ' ' && charBefore !== ':') {
+        // Try finding another occurrence of prefix
+        startIndex = cleaned.indexOf(prefix, startIndex + 1);
+        if (startIndex === -1) return null;
+      }
+    }
+
+    const withoutPrefix = cleaned.slice(startIndex + prefix.length);
     const parts = withoutPrefix.split(/\s+/);
     const command = parts[0].toLowerCase();
     const args = parts.slice(1);

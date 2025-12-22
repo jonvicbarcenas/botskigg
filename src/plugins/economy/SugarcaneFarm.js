@@ -1,5 +1,6 @@
 import BaseBehaviorPlugin from '../base/_BaseBehaviorPlugin.js';
 import logger from '../../utils/Logger.js';
+import ChatParser from '../../utils/ChatParser.js';
 import minecraftData from 'minecraft-data';
 import { plugin as collectBlock } from 'mineflayer-collectblock';
 import fs from 'fs';
@@ -125,16 +126,23 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
   async handleChat(username, message) {
     if (username === this.bot.username) return;
     
-    if (message === '!sugarcane start') {
+    const parsed = ChatParser.parseCommand(message, this.bot.config.behavior?.chatCommandPrefix || '!');
+    if (!parsed || parsed.command !== 'sugarcane') return;
+
+    logger.debug(`SugarcaneFarm received command: ${parsed.command} ${parsed.args.join(' ')} from ${username}`);
+    
+    const subCommand = parsed.args[0];
+
+    if (subCommand === 'start') {
       await this.startFarming();
       this.bot.chat('Sugarcane farming started');
-    } else if (message === '!sugarcane stop') {
+    } else if (subCommand === 'stop') {
       this.stopFarming();
       this.bot.chat('Sugarcane farming stopped');
-    } else if (message === '!sugarcane status') {
+    } else if (subCommand === 'status') {
       const status = `Farming: ${this.isFarming ? 'Active' : 'Inactive'}, Harvested: ${this.harvestCount}`;
       this.bot.chat(status);
-    } else if (message === '!sugarcane area') {
+    } else if (subCommand === 'area') {
       if (this.farmArea) {
         const center = this.getFarmCenter();
         this.bot.chat(`Farm center: ${center.x}, ${center.y}, ${center.z}`);
@@ -167,7 +175,12 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
       }
     }
 
-    logger.info('Starting sugarcane farming...');
+    // Disable sprinting for careful farming
+    if (this.pathfinder) {
+      this.pathfinder.setConfig({ allowSprinting: false });
+    }
+
+    logger.info('Starting sugarcane farming (sprinting disabled)...');
     
     // Move to farm center first
     const center = this.getFarmCenter();
@@ -202,8 +215,14 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
     if (this.stateMachine) {
       this.stateMachine.setState('idle');
     }
+
+    // Re-enable sprinting based on config
+    if (this.pathfinder) {
+      const defaultSprint = this.bot.config?.physics?.pathfinder?.allowSprinting !== false;
+      this.pathfinder.setConfig({ allowSprinting: defaultSprint });
+    }
     
-    logger.info('Sugarcane farming stopped');
+    logger.info('Sugarcane farming stopped (sprinting restored)');
   }
 
   /**

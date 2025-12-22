@@ -1,5 +1,6 @@
 import IPlugin from '../../interfaces/IPlugin.js';
 import logger from '../../utils/Logger.js';
+import ChatParser from '../../utils/ChatParser.js';
 import minecraftData from 'minecraft-data';
 import { BehaviorIdle } from '../core/StateMachine.js';
 
@@ -98,11 +99,18 @@ class AutoEat extends IPlugin {
 
   async handleChat(username, message) {
     if (username === this.bot.username) return;
-    if (message === '!eat now') {
+    
+    const parsed = ChatParser.parseCommand(message, this.bot.config.behavior?.chatCommandPrefix || '!');
+    if (!parsed || parsed.command !== 'eat') return;
+
+    logger.debug(`AutoEat received command: ${parsed.command} ${parsed.args.join(' ')} from ${username}`);
+    
+    const subCommand = parsed.args[0];
+
+    if (subCommand === 'now') {
       await this.checkAndEat(true);
-    } else if (message.startsWith('!eat threshold')) {
-      const parts = message.trim().split(/\s+/);
-      const val = parseInt(parts[2]);
+    } else if (subCommand === 'threshold') {
+      const val = parseInt(parsed.args[1]);
       if (!isNaN(val) && val >= 0 && val <= 20) {
         this.threshold = val;
         this.bot.chat(`Eat threshold set to ${val}`);
