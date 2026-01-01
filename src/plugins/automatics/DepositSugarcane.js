@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Vec3 } from 'vec3';
 import { BehaviorIdle } from '../core/StateMachine.js';
+import { getBotClient, sleep } from '../../utils/helpers/asyncHelpers.js';
+import { loadChestArea } from '../../utils/helpers/waypointsHelper.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,9 +35,7 @@ class DepositSugarcane extends IPlugin {
       if (typeof this.bot.setMaxListeners === 'function') {
         this.bot.setMaxListeners(50);
       }
-      const BotClientModule = await import('../../core/BotClient.js');
-      const BotClient = BotClientModule.default;
-      const botClient = BotClient.getInstance();
+      const botClient = await getBotClient();
       this.pluginLoader = botClient.getPluginLoader();
 
       this.navigation = this.pluginLoader.getPlugin('Navigation');
@@ -146,7 +146,7 @@ class DepositSugarcane extends IPlugin {
     if (!force && count < this.threshold) return;
 
     // Resolve chest area from waypoints
-    const chestArea = this.loadChestArea();
+    const chestArea = loadChestArea('sugarcane_chest_area');
     if (!chestArea) {
       logger.warn('No sugarcane_chest_area.area_radius defined in waypoints.json');
       return;
@@ -173,7 +173,7 @@ class DepositSugarcane extends IPlugin {
         this.bot.stateMachine.setState('depositing', true);
       }
       // wait a bit to ensure loops stop
-      await this.sleep(800);
+      await sleep(800);
 
       // Loop deposit until inventory goes below threshold
       let noChestAttempts = 0;
@@ -198,7 +198,7 @@ class DepositSugarcane extends IPlugin {
           } else {
             logger.warn('No available chest found in chest area, retrying...');
           }
-          await this.sleep(1000);
+          await sleep(1000);
           continue;
         }
 
@@ -222,7 +222,7 @@ class DepositSugarcane extends IPlugin {
           logger.debug(`Successfully deposited ${countBefore - countAfter} sugarcane`);
         }
         
-        await this.sleep(300);
+        await sleep(300);
       }
 
       // Resume farming only after inventory is below threshold
@@ -238,19 +238,6 @@ class DepositSugarcane extends IPlugin {
       if (this.bot.stateMachine) {
         this.bot.stateMachine.setState('idle', true);
       }
-    }
-  }
-
-  loadChestArea() {
-    try {
-      const waypointsPath = path.join(__dirname, '../../../data/waypoints.json');
-      const data = JSON.parse(fs.readFileSync(waypointsPath, 'utf8'));
-      const ar = data.areas?.sugarcane_chest_area?.area_radius;
-      if (!ar) return null;
-      return { center: { x: ar.x, y: ar.y, z: ar.z }, radius: ar.radius ?? 10 };
-    } catch (e) {
-      logger.error('Failed to read waypoints.json for chest area', e);
-      return null;
     }
   }
 
@@ -328,7 +315,7 @@ class DepositSugarcane extends IPlugin {
           }
           const goal = new mp.goals.GoalNear(center.x, center.y, center.z, Math.max(2, Math.min(5, radius)));
           this.bot.pathfinder.setGoal(goal);
-          await this.sleep(3000);
+          await sleep(3000);
           this.bot.pathfinder.setGoal(null);
         } catch (pfErr) {
           logger.warn(`ensureInChestArea fallback failed: ${pfErr.message}`);
@@ -349,14 +336,14 @@ class DepositSugarcane extends IPlugin {
           const mp = pfMod.default || pfMod;
           const goal = new mp.goals.GoalNear(nudge.x, nudge.y, nudge.z, 1);
           this.bot.pathfinder.setGoal(goal);
-          await this.sleep(1200);
+          await sleep(1200);
           this.bot.pathfinder.setGoal(null);
         } catch (e) {
           // Ignore nudge errors
         }
         attempts = 0; // reset attempts after nudge
       }
-      await this.sleep(500);
+      await sleep(500);
     }
   }
 
@@ -436,7 +423,7 @@ class DepositSugarcane extends IPlugin {
               // Fallback: quick move this slot
               await this.safeQuickMove(stack.slot);
             }
-            await this.sleep(100);
+            await sleep(100);
             
             // Check if anything was actually deposited
             const countAfter = this.getSugarcaneCount();
@@ -450,7 +437,7 @@ class DepositSugarcane extends IPlugin {
           } catch (innerErr) {
             // If deposit API failed (direction mismatch), fallback to quick move
             await this.safeQuickMove(stack.slot);
-            await this.sleep(100);
+            await sleep(100);
           }
         }
       };
@@ -461,7 +448,7 @@ class DepositSugarcane extends IPlugin {
       while (this.isFarming && this.getSugarcaneCount() > 0 && safety < 10) {
         const beforeAttempt = this.getSugarcaneCount();
         await depositAllStacks();
-        await this.sleep(150);
+        await sleep(150);
         const afterAttempt = this.getSugarcaneCount();
         
         // If no progress was made, chest is likely full
@@ -503,8 +490,6 @@ class DepositSugarcane extends IPlugin {
       logger.debug(`quickMoveSlot failed: ${e.message}`);
     }
   }
-
-  sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   getStatus() {
     return {

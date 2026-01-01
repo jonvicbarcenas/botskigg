@@ -3,6 +3,7 @@ import logger from '../../utils/Logger.js';
 import ChatParser from '../../utils/ChatParser.js';
 import { Vec3 } from 'vec3';
 import { plugin as collectBlock } from 'mineflayer-collectblock';
+import { getBotClient, sleep } from '../../utils/helpers/asyncHelpers.js';
 
 /**
  * AutoFarm Plugin - Handles automated farming
@@ -40,8 +41,7 @@ class AutoFarm extends BaseBehaviorPlugin {
     }
     
     // Get pluginLoader reference from BotClient
-    const BotClient = (await import('../../core/BotClient.js')).default;
-    const botClient = BotClient.getInstance();
+    const botClient = await getBotClient();
     this.pluginLoader = botClient.getPluginLoader();
     
     // Get pathfinder from Navigation plugin
@@ -134,7 +134,7 @@ class AutoFarm extends BaseBehaviorPlugin {
           if (cropName) {
             await this.replantCrop(crop.position, cropName);
           }
-          await this.sleep(500);
+          await sleep(500);
         } catch (error) {
           logger.error('Error harvesting crop:', error);
         }
@@ -147,7 +147,7 @@ class AutoFarm extends BaseBehaviorPlugin {
           const blockAbove = this.bot.blockAt(farmland.position.offset(0, 1, 0));
           if (blockAbove && (blockAbove.name === 'air' || blockAbove.name === 'void_air' || blockAbove.name === 'cave_air')) {
             await this.replantCrop(farmland.position.offset(0, 1, 0));
-            await this.sleep(500);
+            await sleep(500);
           }
         } catch (error) {
           logger.error('Error planting on empty farmland:', error);
@@ -247,12 +247,12 @@ class AutoFarm extends BaseBehaviorPlugin {
         for (const crop of matureCrops.slice(0, 5)) {
           const name = await this.harvestCrop(crop);
           if (name) await this.replantCrop(crop.position, name);
-          await this.sleep(500);
+          await sleep(500);
         }
 
         for (const farmland of emptyFarmland.slice(0, 5)) {
           await this.replantCrop(farmland.position.offset(0, 1, 0));
-          await this.sleep(500);
+          await sleep(500);
         }
       }
     } catch (error) {
@@ -343,7 +343,7 @@ class AutoFarm extends BaseBehaviorPlugin {
           await this.bot.collectBlock.collect(item, { ignoreNoPath: true });
         } else if (this.pathfinder) {
           await this.pathfinder.goto(item.position.x, item.position.y, item.position.z, 0);
-          await this.sleep(200);
+          await sleep(200);
         }
       } catch (error) {
         logger.debug(`Failed to collect item: ${error.message}`);
@@ -480,7 +480,7 @@ class AutoFarm extends BaseBehaviorPlugin {
             if (hoe) {
               await this.bot.equip(hoe, 'hand');
               await this.bot.activateBlock(block);
-              await this.sleep(100);
+              await sleep(100);
             }
           }
         } catch (error) {
@@ -490,10 +490,6 @@ class AutoFarm extends BaseBehaviorPlugin {
     }
 
     logger.success('Farmland creation complete');
-  }
-
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   getStatus() {

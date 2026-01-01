@@ -1,5 +1,6 @@
 import BaseBehavior from './BaseBehavior.js';
 import logger from '../../utils/Logger.js';
+import { sleep } from '../../utils/helpers/asyncHelpers.js';
 
 /**
  * Farming Behavior Component - Handles autonomous farming
@@ -88,7 +89,7 @@ class FarmingBehavior extends BaseBehavior {
       this.stats.cropsHarvested++;
       
       // Wait a bit
-      await this.sleep(500);
+      await sleep(500);
       
       // Replant if we have seeds
       const seeds = this.findSeeds(block.name);
@@ -116,13 +117,6 @@ class FarmingBehavior extends BaseBehavior {
     
     const seedName = seedMap[cropType];
     return this.bot.inventory.items().find(item => item.name === seedName);
-  }
-
-  /**
-   * Sleep utility
-   */
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
