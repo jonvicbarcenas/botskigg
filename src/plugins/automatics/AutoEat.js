@@ -3,6 +3,7 @@ import logger from '../../utils/Logger.js';
 import ChatParser from '../../utils/ChatParser.js';
 import minecraftData from 'minecraft-data';
 import { BehaviorIdle } from '../core/StateMachine.js';
+import { getBotClient, sleep } from '../../utils/helpers/asyncHelpers.js';
 
 class AutoEat extends IPlugin {
   constructor(bot, config = {}) {
@@ -51,9 +52,7 @@ class AutoEat extends IPlugin {
 
   async load() {
     try {
-      const BotClientModule = await import('../../core/BotClient.js');
-      const BotClient = BotClientModule.default;
-      const botClient = BotClient.getInstance();
+      const botClient = await getBotClient();
       this.pluginLoader = botClient.getPluginLoader();
 
       this.navigation = this.pluginLoader.getPlugin('Navigation');
@@ -188,9 +187,9 @@ class AutoEat extends IPlugin {
       // Equip and consume
       await this.bot.equip(food, 'hand');
       // small settle delay
-      await this.sleep(200);
+      await sleep(200);
       await this.bot.consume();
-      await this.sleep(200);
+      await sleep(200);
 
       logger.info(`Ate ${this.mcData.items[food.type]?.name || 'food'}`);
     } catch (err) {
@@ -207,8 +206,6 @@ class AutoEat extends IPlugin {
       }
     }
   }
-
-  sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   getStatus() {
     return {

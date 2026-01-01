@@ -5,6 +5,7 @@ import { Vec3 } from 'vec3';
 import { BehaviorIdle } from '../core/StateMachine.js';
 import ChatParser from '../../utils/ChatParser.js';
 import AutomationControl from '../../utils/AutomationControl.js';
+import { getBotClient } from '../../utils/helpers/asyncHelpers.js';
 
 /**
  * DepositWheat Plugin - Automatically deposits wheat into a specific chest
@@ -24,9 +25,7 @@ class DepositWheat extends IPlugin {
 
   async load() {
     try {
-      const BotClientModule = await import('../../core/BotClient.js');
-      const BotClient = BotClientModule.default;
-      const botClient = BotClient.getInstance();
+      const botClient = await getBotClient();
       this.pluginLoader = botClient.getPluginLoader();
 
       this.navigation = this.pluginLoader.getPlugin('Navigation');
@@ -151,28 +150,6 @@ class DepositWheat extends IPlugin {
       }
     }
   }
-
-  async depositToChest(chestBlock) {
-    let container = null;
-    try {
-      container = await this.bot.openContainer(chestBlock);
-      const wheatItem = this.mcData.itemsByName['wheat'];
-      const stacks = this.bot.inventory.items().filter(i => i.type === wheatItem.id);
-      
-      for (const stack of stacks) {
-        await container.deposit(stack.type, null, stack.count);
-        await new Promise(r => setTimeout(r, 200));
-      }
-      logger.success('Wheat deposited successfully');
-    } catch (err) {
-      logger.error('Error during wheat deposit', err);
-    } finally {
-      if (container) await container.close();
-    }
-  }
-}
-
-export default DepositWheat;
 
   async depositToChest(chestBlock) {
     let container = null;

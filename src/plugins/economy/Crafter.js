@@ -1,5 +1,6 @@
 import IPlugin from '../../interfaces/IPlugin.js';
 import logger from '../../utils/Logger.js';
+import { sleep } from '../../utils/helpers/asyncHelpers.js';
 
 /**
  * Crafter Plugin - Handles item crafting automation
@@ -236,17 +237,13 @@ class Crafter extends IPlugin {
     for (const { item, amount } of itemList) {
       try {
         await this.craftItem(item, amount);
-        await this.sleep(1000); // Wait between crafts
+        await sleep(1000); // Wait between crafts
       } catch (error) {
         logger.error(`Failed to craft ${item}`, error);
       }
     }
     
     logger.success('Auto-craft complete');
-  }
-
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   getStatus() {

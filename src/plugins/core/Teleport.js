@@ -4,6 +4,7 @@ import AutomationControl from '../../utils/AutomationControl.js';
 import logger from '../../utils/Logger.js';
 import ChatParser from '../../utils/ChatParser.js';
 import { Vec3 } from 'vec3';
+import { getBotClient, sleep } from '../../utils/helpers/asyncHelpers.js';
 
 /**
  * Teleport Plugin - Handles trapdoor interaction for teleportation
@@ -23,8 +24,7 @@ class Teleport extends IPlugin {
       this.pathfinder.initialize();
       
       // Get pluginLoader reference from BotClient
-      const BotClient = (await import('../../core/BotClient.js')).default;
-      const botClient = BotClient.getInstance();
+      const botClient = await getBotClient();
       this.pluginLoader = botClient.getPluginLoader();
       
       // Initialize automation control utility
@@ -66,7 +66,7 @@ class Teleport extends IPlugin {
     try {
       // Temporarily pause all automation (will resume after)
       this.automationControl.pauseAll();
-      await this.sleep(500);
+      await sleep(500);
 
       const { x, y, z } = this.trapdoorPos;
       
@@ -93,7 +93,7 @@ class Teleport extends IPlugin {
       logger.success('Trapdoor interaction complete');
 
       // Wait a moment then resume automation
-      await this.sleep(1000);
+      await sleep(1000);
       await this.automationControl.resumeAll();
     } catch (error) {
       logger.error('Failed to interact with trapdoor', error);
@@ -101,10 +101,6 @@ class Teleport extends IPlugin {
       // Resume automation on error
       await this.automationControl.resumeAll();
     }
-  }
-
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   getStatus() {

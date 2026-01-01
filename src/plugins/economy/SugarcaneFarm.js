@@ -3,12 +3,8 @@ import logger from '../../utils/Logger.js';
 import ChatParser from '../../utils/ChatParser.js';
 import minecraftData from 'minecraft-data';
 import { plugin as collectBlock } from 'mineflayer-collectblock';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { getBotClient, sleep } from '../../utils/helpers/asyncHelpers.js';
+import { loadFarmArea, getFarmCenter } from '../../utils/helpers/waypointsHelper.js';
 
 /**
  * SugarcaneFarm Plugin - Handles automated sugarcane farming
@@ -27,7 +23,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
   }
 
   async onLoad() {
-    logger.debug(`SugarcaneFarm onLoad: this.name=${this.name}, type of loadFarmArea=${typeof this.loadFarmArea}`);
+    logger.debug(`SugarcaneFarm onLoad: this.name=${this.name}, type of loadFarmArea=${typeof loadFarmArea}`);
     // Load mineflayer-collectblock plugin
     if (!this.bot.collectBlock) {
       this.bot.loadPlugin(collectBlock);
@@ -35,8 +31,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
     }
     
     // Get pluginLoader reference from BotClient
-    const BotClient = (await import('../../core/BotClient.js')).default;
-    const botClient = BotClient.getInstance();
+    const botClient = await getBotClient();
     this.pluginLoader = botClient.getPluginLoader();
     
     // Get pathfinder directly from the Navigation plugin's pathfinder utility
@@ -49,7 +44,12 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
     }
     
     // Load farm area from waypoints
-    this.loadFarmArea();
+    this.farmArea = loadFarmArea('sugarcane_farm');
+    if (!this.farmArea) {
+      logger.warn('Sugarcane farm area not defined in waypoints.json');
+    } else {
+      logger.info('Sugarcane farm area loaded from waypoints.json');
+    }
     
     // Setup farming behaviors
     this.setupBehaviors();
@@ -89,31 +89,6 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
     this.createTransition('farming_sugarcane', 'idle', () => !this.isFarming);
     
     logger.info('Sugarcane farming behaviors and transitions registered');
-  }
-
-  /**
-   * Load farm area from waypoints.json
-   */
-  loadFarmArea() {
-    try {
-      const waypointsPath = path.join(__dirname, '../../../data/waypoints.json');
-      if (!fs.existsSync(waypointsPath)) {
-        logger.warn('waypoints.json not found');
-        return;
-      }
-      
-      const data = JSON.parse(fs.readFileSync(waypointsPath, 'utf8'));
-      const farmArea = data.areas?.sugarcane_farm;
-      
-      if (farmArea && farmArea.corner1 && farmArea.corner2) {
-        this.farmArea = farmArea;
-        logger.info('Sugarcane farm area loaded from waypoints.json');
-      } else {
-        logger.warn('Sugarcane farm area not defined in waypoints.json');
-      }
-    } catch (error) {
-      logger.error('Failed to load farm area', error);
-    }
   }
 
   async unload() {
@@ -229,14 +204,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
    * Get center position of farm area
    */
   getFarmCenter() {
-    if (!this.farmArea) return null;
-    
-    const { corner1, corner2 } = this.farmArea;
-    return {
-      x: Math.floor((corner1.x + corner2.x) / 2),
-      y: corner1.y,
-      z: Math.floor((corner1.z + corner2.z) / 2)
-    };
+    return getFarmCenter(this.farmArea);
   }
 
   /**
@@ -266,7 +234,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
           if (!this.isFarming) break;
           
           await this.harvestSugarcane(block);
-          await this.sleep(500); // Small delay between harvests
+          await sleep(500); // Small delay between harvests
         }
       }
     } catch (error) {
@@ -429,7 +397,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
             const { goals } = pathfinderModule;
             const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3);
             this.bot.pathfinder.setGoal(goal);
-            await this.sleep(2000); // Wait for movement
+            await sleep(2000); // Wait for movement
           }
         } catch (navError) {
           logger.debug(`Could not navigate to sugarcane: ${navError.message}`);
@@ -445,19 +413,19 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
       this.bot.pathfinder.setGoal(null);
       
       // Wait for bot to fully stop moving and for any ongoing actions to complete
-      await this.sleep(800);
+      await sleep(800);
       
       // Ensure bot is not moving before digging
       const velocity = this.bot.entity.velocity;
       const isMoving = Math.abs(velocity.x) > 0.01 || Math.abs(velocity.z) > 0.01;
       if (isMoving) {
         logger.debug('Bot still moving, waiting longer...');
-        await this.sleep(500);
+        await sleep(500);
       }
 
       // Look at the block
       await this.bot.lookAt(block.position.offset(0.5, 0.5, 0.5));
-      await this.sleep(300);
+      await sleep(300);
 
       // Verify block still exists and is harvestable
       const targetBlock = this.bot.blockAt(block.position);
@@ -472,7 +440,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
       logger.debug(`Harvested sugarcane at ${block.position.x}, ${block.position.y}, ${block.position.z} (base kept at y=${baseBlock.position.y})`);
       
       // Wait a moment for drops to spawn
-      await this.sleep(300);
+      await sleep(300);
       
       // Collect nearby sugarcane drops (skip if depositing)
       if (!this.bot.memory?.isDepositing) {
@@ -483,7 +451,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
       // Mark the base position as harvested to prevent immediate re-harvest
       this.markHarvested(baseBlock.position);
       
-      await this.sleep(200);
+      await sleep(200);
     } catch (error) {
       logger.error(`Failed to harvest sugarcane at ${block.position}`, error);
     }
@@ -496,7 +464,7 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
     try {
       if (this.bot.memory?.isDepositing) return;
       // Wait a bit longer for drops to fully spawn and settle
-      await this.sleep(500);
+      await sleep(500);
       
       await this.collectDroppedItems(position);
     } catch (error) {
@@ -629,13 +597,6 @@ class SugarcaneFarm extends BaseBehaviorPlugin {
     } catch (error) {
       logger.debug(`Error in collectAllNearbyDrops: ${error.message}`);
     }
-  }
-
-  /**
-   * Sleep utility
-   */
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
